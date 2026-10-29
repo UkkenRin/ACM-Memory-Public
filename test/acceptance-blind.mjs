@@ -32,7 +32,7 @@ let report = null
 try { report = JSON.parse(run.stdout) } catch {}
 
 ok('the drill exits 0', run.status === 0, `exit ${run.status} ${String(run.stderr).slice(-300)}`)
-ok('and reports four results', Array.isArray(report?.results) && report.results.length === 4,
+ok('and reports five results', Array.isArray(report?.results) && report.results.length === 5,
   JSON.stringify(report?.results ?? report).slice(0, 300))
 
 const byKind = Object.fromEntries((report?.results ?? []).map((r) => [r.kind, r]))
@@ -69,6 +69,13 @@ ok('and that task did not move either',
   ok('a reviewer pointed at no task answers "rejected", not "verified"',
     answer?.verdict === 'rejected', String(line ?? empty.stderr).slice(0, 200))
 }
+
+// A requirement written as prose cannot be decided by this process. The citation
+// checks out; the work does not get called accepted on the strength of that.
+ok('a requirement the reviewer cannot parse is neither verified nor rejected',
+  byKind.freeform?.verdict === 'needs-review' && byKind.freeform?.state === 'returned' &&
+    /not-parseable/i.test(String(byKind.freeform?.reason)),
+  `${byKind.freeform?.verdict} / ${byKind.freeform?.state} / ${byKind.freeform?.reason}`)
 
 // The loop: wrong subject rejected, restarted worker reads the reason, second
 // reviewer verifies, and both attempts are still readable afterwards.

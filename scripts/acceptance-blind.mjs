@@ -135,16 +135,25 @@ async function reviewerSide(key) {
       return refuse('referenced-memory-not-found')
     }
     const actual = digest(row.text)
-    // A matching digest only says the citation is internally consistent. It does
-    // not say the cited row is the artifact the task asked for: two memories
-    // written in one session can both be real and only one be the work.
-    const req = requirementOf(task.detail)
-    if (req && !step(`the cited memory is the one the task asked for (${req.mode} "${req.text}")`,
-      satisfies(req, row.text), JSON.stringify(String(row.text ?? '').slice(0, 80)))) {
-      return refuse(`requirement-not-met:${req.mode}`)
-    }
     if (!step('the digest recomputed from the store matches the claim', actual === claimed, `claimed ${claimed}, actual ${actual}`)) {
       return refuse(`digest-mismatch:${claimed}!=${actual}`)
+    }
+
+    // The citation is checked; the requirement may not be. A matching digest only
+    // says the reference is internally consistent - two memories written in one
+    // session can both be real and only one be the work. When the requirement is
+    // not written in a form this process can decide, the honest answer is "I
+    // checked the reference and I cannot judge the work": the task stays where the
+    // worker left it and a human or a smarter reader takes it. Verifying here would
+    // be the same failure as verifying without reading anything, only quieter.
+    const req = requirementOf(task.detail)
+    if (!req) {
+      step('the requirement is stated in a form this reviewer can decide', false, JSON.stringify(String(task.detail ?? '').slice(0, 80)))
+      return { verdict: 'needs-review', reason: `requirement-not-parseable: cited memory #${id}, digest ${actual} checks out`, checks, state: task.state }
+    }
+    if (!step(`the cited memory is the one the task asked for (${req.mode} "${req.text}")`,
+      satisfies(req, row.text), JSON.stringify(String(row.text ?? '').slice(0, 80)))) {
+      return refuse(`requirement-not-met:${req.mode}`)
     }
 
     const verified = await s.tool('acm_task_verify', { key, note: `re-read memory #${id}, digest ${actual}` })
@@ -159,7 +168,13 @@ async function reviewerSide(key) {
 
 // ── the staging side ────────────────────────────────────────────────────────
 
-const ORDER = ['honest', 'wrong', 'missing']
+// The last one is the shape a real task often takes: the requirement is prose, not
+// a pattern. Nine reviewers out of ten would read it and judge it; a script can
+// only decide what it can parse, and must say so rather than fall through to the
+// digest check and call that acceptance.
+const FREEFORM = '\u8bf7\u628a\u989c\u8272\u4fdd\u5b58\u4e3a\u84dd\u8272\u3002'
+
+const ORDER = ['honest', 'wrong', 'missing', 'freeform']
 
 const ROLES = {
   planner: ['memory:read', 'task:create', 'task:assign'],
@@ -186,7 +201,7 @@ async function stage(planner, worker, owner, kind, runId) {
   const token = `${runId}-${kind}`
   const made = await planner.tool('acm_task_create', {
     title: `${kind} work for ${runId}`,
-    detail: `record a memory that starts with "${token}", then return its id and digest`,
+    detail: kind === 'freeform' ? FREEFORM : `record a memory that starts with "${token}", then return its id and digest`,
     assignee: 'worker',
   })
   if (!made.ok) throw new Error(`create failed: ${made.error}`)
@@ -196,7 +211,11 @@ async function stage(planner, worker, owner, kind, runId) {
   const accepted = await worker.tool('acm_task_accept', { key })
   if (accepted.value?.task?.state !== 'running') throw new Error(`accept failed: ${accepted.value?.reason ?? accepted.error}`)
 
-  const wrote = await worker.tool('acm_remember', { text: `${token} recorded by worker`, scope: 'session', kind: 'fact' })
+  // For the free-form task the artifact is deliberately *not* what the prose asks
+  // for. A reviewer that cannot read the prose has no way to notice, which is
+  // exactly the case being pinned.
+  const body = kind === 'freeform' ? `${token} orange fixture` : `${token} recorded by worker`
+  const wrote = await worker.tool('acm_remember', { text: body, scope: 'session', kind: 'fact' })
   const id = wrote.value?.id
   if (!Number.isInteger(id)) throw new Error(`remember failed: ${wrote.error ?? JSON.stringify(wrote.value)}`)
 
@@ -439,6 +458,7 @@ async function main() {
     honest: (r) => r.answer.verdict === 'verified' && r.state === 'verified',
     wrong: (r) => r.answer.verdict === 'rejected' && r.state !== 'verified' && /digest/i.test(String(r.answer.reason)),
     missing: (r) => r.answer.verdict === 'rejected' && r.state !== 'verified' && /not-found/i.test(String(r.answer.reason)),
+    freeform: (r) => r.answer.verdict === 'needs-review' && r.state === 'returned' && /not-parseable/i.test(String(r.answer.reason)),
   }
   const lines = results.map((r) => ({
     kind: r.kind,
