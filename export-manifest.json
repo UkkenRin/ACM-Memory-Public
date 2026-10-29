@@ -1,7 +1,7 @@
 {
-  "exportId": "4455f15051b1",
+  "exportId": "a9a67db704b5",
   "tool": 2,
-  "createdAt": "2026-11-17T23:39:09.730Z",
+  "createdAt": "2026-11-17T23:42:15.606Z",
   "note": "Public manifest. It carries file hashes and an export id only: the private source commit is recorded on the private side, deliberately.",
   "files": {
     ".gitattributes": "07b93b4f86f8746c5cb71f13eb50ad0a6c7bdd3a7fbe42c9047fda8db3beace5",
@@ -141,7 +141,7 @@
     "test/sdk-auth.mjs": "9af87bd036aa75028b9625205989f56bac3c6ea45d21414bff6d6116ccbbdb19",
     "test/sdk-boundary.mjs": "d77cd4dd84432be47b80c189014fd14eebf8a82dbba6e941b549eaa53095ba8c",
     "test/sdk-grant-expiry.mjs": "1a23aec0cfac4cbaa4f03db026712a137eec6e6f676836402df34d15ecc49862",
-    "test/sdk-identity.mjs": "8858630e524b3a4d392dbdf1de1f2482c5f17f98b756c3e82d33de7351a55b06",
+    "test/sdk-identity.mjs": "0b95efbd150471cd771ea0a904a06879b2edc22431c998a5c53841eb70df04d9",
     "test/sdk-surfaces.mjs": "5a1b3e6040eda0676205f7d55f76cf678318a4c6f657c7ccffe1ca84bcda2976",
     "test/sdk-task.mjs": "08de40c06682a438d51d3da4eb96d7497b05f27e3662121cf3497fa41d704d70",
     "test/security.mjs": "fb0c51e12c1631b0e7a5faf4b8f1c55d6497702e4b014f8a1ebf8cb167eeced6",

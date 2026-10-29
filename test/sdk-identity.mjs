@@ -34,11 +34,19 @@ const writeGlobal = principalFromConfig(mergeConfig({ agent: 'alice', project: '
 grant(seed, { principal: writeGlobal, action: 'memory:write-global', target: null, grantedBy: 'operator' })
 seed.close()
 
-const open = (agent) => openMemory({
-  dbPath,
-  sessionId: `s-${agent}`,
-  config: { agent, project: 'alpha', auth: { mode: 'scoped' } },
-})
+// Every handle holds the database open. On Linux the cleanup still unlinks the file with
+// readers attached; on Windows it comes back `EBUSY` and the suite fails after every
+// assertion passed - which is how the two Windows legs found this.
+const handles = []
+const open = (agent) => {
+  const handle = openMemory({
+    dbPath,
+    sessionId: `s-${agent}`,
+    config: { agent, project: 'alpha', auth: { mode: 'scoped' } },
+  })
+  handles.push(handle)
+  return handle
+}
 const alice = open('alice')
 const bob = open('bob')
 const carol = open('carol')
@@ -127,7 +135,10 @@ const refuses = (fn) => {
   ok('with operator:maintain the same call is allowed', typeof allowed.merged === 'number', JSON.stringify(allowed))
 }
 
-rmSync(dir, { recursive: true, force: true })
+for (const handle of handles) { try { handle.close() } catch {} }
+// The OS can hold the last handle for a moment after close. A temp directory that outlives
+// the run is untidy; a green suite reported as red is worse, so the removal is best-effort.
+try { rmSync(dir, { recursive: true, force: true }) } catch {}
 console.log('')
 if (failures.length) {
   console.log(`FAILED ${failures.length}`)
