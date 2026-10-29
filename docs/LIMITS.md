@@ -121,8 +121,8 @@ item below is a property of the current code, not a bug we are about to fix.
   be refused a write without causing a backup, a prune or a task event. The CLI keeps its
   startup snapshot because running `acm` is already an operator act.
 - There is no remote MCP transport yet. A hosted assistant cannot reach this store over
-  HTTP: the design is written down in [design/ACM_HTTP_TRANSPORT](design/ACM_HTTP_TRANSPORT.md)
-  and nothing in it is implemented.
+  HTTP. The design notes stay in the private repository and nothing in them is
+  implemented, so this public tree describes only what it ships.
 
 ## Collaboration features
 

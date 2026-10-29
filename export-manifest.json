@@ -1,7 +1,7 @@
 {
-  "exportId": "167538c6cd5d",
+  "exportId": "6d2fb6d2aad7",
   "tool": 2,
-  "createdAt": "2026-11-16T11:58:21.694Z",
+  "createdAt": "2026-11-16T12:08:54.088Z",
   "note": "Public manifest. It carries file hashes and an export id only: the private source commit is recorded on the private side, deliberately.",
   "files": {
     ".gitattributes": "07b93b4f86f8746c5cb71f13eb50ad0a6c7bdd3a7fbe42c9047fda8db3beace5",
@@ -14,7 +14,7 @@
     "api-surface.json": "db6cba182d8ef68f1b6253c094a33ab0fad708cfd65d28ae3297becb97f3a70d",
     "docs/API.md": "52b5d0718b2dd6c3e408f7b29b37bcf2f4d61c4c05d2fcf9f2a13de17ad0ffa7",
     "docs/INSTALL.md": "20a925343feb6cffc16976184bc74490b0b5d75c2c088bd4a7ad71d1b22acfad",
-    "docs/LIMITS.md": "a481f7d4ec6f595afa349b1da078c2a168aed8b579aa71dd0cea0a9be6f50396",
+    "docs/LIMITS.md": "44c10d3e4950f4151c2dd32d7ba23beab43462a7d94215de32426238dd5031fd",
     "dsh.bundle.yml": "fb4d7c1c4e2b0a31b6fa5b4ad816b6ab8bcc6cc2db6dd25f922ea65477457998",
     "lib/auth.mjs": "0178a2c007d1e4e2bf46c02ea8d3660b67f28f00ded0d0037c0242858f2ca313",
     "lib/backup.mjs": "cb0c8565998ab5a48b56bcd08039c4c7ae29af7134ac69c1c96d7e55abe453ce",
