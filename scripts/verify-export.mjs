@@ -41,6 +41,19 @@ const MANIFEST = 'export-manifest.json'
 const SKIP_DIRS = new Set(['.git', 'node_modules'])
 
 /**
+ * Test scratch at the top level, named `.tmp`, `.tmp-smoke`, `.tmp-gaps`, `.tmp-distill`.
+ * The suite creates these **inside** the tree and `.gitignore` covers them, so a git
+ * checkout never sees them; but `fileUniverse()` falls back to walking the disk when there
+ * is no `.git`, which is exactly the case for a freshly exported directory. Verified one
+ * such tree minutes after `npm run test:all` and got nine "not in the manifest" problems
+ * for files the suite had just written - a false failure that reads like an export defect
+ * and cost a detour while chasing a real one (`PUB-12`). This cannot hide a published
+ * file: an exporter that shipped `.tmp/x` would list it in the manifest, and manifest
+ * members are hash-checked before this walk is consulted.
+ */
+const isScratchDir = (name) => name === '.tmp' || name.startsWith('.tmp-')
+
+/**
  * The universe being verified is **the set of files that would ship**, not everything
  * on disk in a working copy where a test has just run. In a git checkout that is the
  * committed list plus any file added but not yet ignored; in a tarball it is the tree.
@@ -69,7 +82,7 @@ function walk(dir, acc = [], seen = new Map()) {
     const st = lstatSync(abs)
     if (st.isSymbolicLink()) { acc.push({ path: relative(root, abs).replace(/\\/g, '/'), kind: 'symlink' }); continue }
     if (st.isDirectory()) {
-      if (SKIP_DIRS.has(name) && resolve(dir) === resolve(root)) continue
+      if ((SKIP_DIRS.has(name) || isScratchDir(name)) && resolve(dir) === resolve(root)) continue
       walk(abs, acc, seen)
       continue
     }
