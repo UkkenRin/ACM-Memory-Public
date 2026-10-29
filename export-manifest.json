@@ -1,7 +1,7 @@
 {
-  "exportId": "00c097ecf663",
+  "exportId": "3f81e6a9c763",
   "tool": 2,
-  "createdAt": "2026-11-18T03:46:36.257Z",
+  "createdAt": "2026-11-18T04:15:29.126Z",
   "note": "Public manifest. It carries file hashes and an export id only: the private source commit is recorded on the private side, deliberately.",
   "files": {
     ".gitattributes": "07b93b4f86f8746c5cb71f13eb50ad0a6c7bdd3a7fbe42c9047fda8db3beace5",
@@ -80,7 +80,7 @@
     "lib/vendor/ort/node_modules/onnxruntime-web/dist/ort.node.min.mjs": "9bdb8aaab1d0deabe6f38572ad4d6f8b793bad8a5e184f8aa4fcc0d8cace7810",
     "lib/vendor/ort/node_modules/onnxruntime-web/package.json": "81fa53b6bf23c91d6fdd37dac97ebec558048bbd14ccbcc02e54fb47d3c1c699",
     "package.json": "22497962d1f53fdb2e6666dd564125b5f558e83a6dbd1dfb4fa1c2fa5e0b9ee3",
-    "scripts/acceptance-blind.mjs": "2deab0a78c22f2d70381887b09cd9279961bb4437c925b0cc8a03ea28788774e",
+    "scripts/acceptance-blind.mjs": "17eba90d69bef3798ae5c56fc1b777aa937f68ec7c81a27057224c970cfbdc11",
     "scripts/agent-drill.mjs": "54a6433e03c5bd1d0f782ec28f8c5bddaf533684436c3867916f9c8751f9e1dc",
     "scripts/check-api.mjs": "809c6f5612f9839b7d86d6ed88b383037377bb682ab854f484d62fd0e3772ff9",
     "scripts/check-doc-links.mjs": "3b4f569121ce414c4d0ec962bebcf5eaaf103c5fc603b7bb2964a1f4140f7163",
@@ -98,7 +98,7 @@
     "scripts/two-agent-loop.mjs": "45f7163dad90cb697f1d915b692f0de4c5775fc3d80f3587746945f0a0a915a7",
     "scripts/verify-export.mjs": "bd8d5a449e7a06b85a3cbfe268370c641541d3babc563f64c8ae014237e8d6a3",
     "test/_load-writer.mjs": "1c3bcef87442738a00a15bb660b7e053b488093ea4cb67d74e831d55aa712af3",
-    "test/acceptance-blind.mjs": "b4715b3f29a24be225d5aac955a1393bf2e68fefcb5c4ba07bdcdc48585ac189",
+    "test/acceptance-blind.mjs": "ff81a724838ab1c49cb5ceb23b7e5961a2d8bbc5e32450677b459a933a99a9f5",
     "test/auth-parity.mjs": "d39dcbc53309b7ca5fa150278511b580f5fba7db1f24f11646ea8869b4108e57",
     "test/auth.mjs": "226768bd3e4dd26fc746b6206195a6de1eba196be5f75e9091e04d7f0886d085",
     "test/backup.mjs": "f88748ca69cdfc274abd7e7e082829bfc7d11ed0e28c4e19bf35c46392acf282",
