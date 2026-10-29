@@ -68,11 +68,22 @@ function run(extraArgs = []) {
   ok('no request carried an id before the inbox answered', !tape.some((t) => t.agent === 'worker' && t.args && 'id' in t.args
     && workerTape.indexOf(t.tool) < iInbox), JSON.stringify(tape.filter((t) => t.agent === 'worker' && t.args?.id)))
 
+  // The tape holds the response side, not just the request side: the claim rests on
+  // "this id came out of that call", and before batch 29 the tape could not show it.
+  const inboxCall = tape.find((t) => t.agent === 'worker' && t.tool === 'acm_inbox')
+  ok('the tape records the id inside the inbox response itself',
+    Array.isArray(inboxCall?.resultIds) && inboxCall.resultIds.includes(report?.discovered?.id),
+    `resultIds ${JSON.stringify(inboxCall?.resultIds ?? null)} vs discovered ${JSON.stringify(report?.discovered?.id)}`)
+  ok('and records a digest of every response, so two tapes can be compared',
+    tape.filter((t) => t.method === 'tools/call').every((t) => typeof t.resultDigest === 'string' && t.resultDigest.length === 16),
+    tape.filter((t) => t.method === 'tools/call').map((t) => t.resultDigest).join(','))
+
   // The rival is refused for the right reason, not by luck
   ok('a second process found nothing left to do', step('sees nothing addressed to it')?.ok === true,
     String(step('sees nothing addressed to it')?.detail ?? 'missing'))
-  ok('and was refused with a named reason when it tried to take the finished item',
-    step('cannot claim the item')?.ok === true, String(step('cannot claim the item')?.detail ?? 'missing'))
+  ok('and was refused with the named reason, not merely a false result',
+    step('cannot claim the item')?.ok === true && step('cannot claim the item')?.detail === 'not-your-inbox',
+    `detail=${JSON.stringify(step('cannot claim the item')?.detail ?? null)}`)
 }
 
 // 2. No work in the store: the run must go red, not green on an empty list

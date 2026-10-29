@@ -77,6 +77,8 @@ try {
 }
 
 const problems = []
+/** Lines whose hits were suppressed by an inline marker, so "passed" has a number. */
+let suppressed = 0
 
 for (const rel of files) {
   for (const rule of FORBIDDEN) {
@@ -97,7 +99,7 @@ for (const rel of files) {
     // Test fixtures for the redactor are real-shaped by design. The marker has to
     // be on the line or immediately above it, so it cannot silence a whole file.
     const allowed = lines[i].includes('secret-scan:allow') || (lines[i - 1] ?? '').includes('secret-scan:allow')
-    if (allowed) continue
+    if (allowed) { suppressed += 1; continue }
     for (const rule of RULES) {
       if (rule.re.test(lines[i])) problems.push(`${rel}:${i + 1}: ${rule.id}`)
     }
@@ -108,5 +110,7 @@ if (problems.length) {
   console.error(`Secret scan failed (${problems.length}):\n` + problems.join('\n'))
   process.exitCode = 1
 } else {
-  console.log(`Secret scan passed (${files.length} files, from ${scannedFrom}).`)
+  const text = files.filter((f) => !BINARY_SKIP.some((re) => re.test(f))).length
+  console.log(`Secret scan passed (${files.length} files, ${text} eligible for text rules, from ${scannedFrom};`
+    + ` ${suppressed} line(s) allowed inline).`)
 }

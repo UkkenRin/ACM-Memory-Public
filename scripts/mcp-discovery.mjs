@@ -2,6 +2,12 @@
 /**
  * A worker that is told nothing: work must be *discovered*, not handed over.
  *
+ * What is scripted and what is not, stated first because the difference matters: the
+ * *tool choice* is made by this file's code - it calls `acm_inbox`, then `acm_claim` with
+ * whatever came back. What is discovered is the **work**, and the *surface* is checked
+ * against `tools/list` rather than assumed. So this proves the protocol path a second
+ * client takes, not a model's judgement about which tool to use.
+ *
  * Every other driver in this repository hands the worker what to do. `two-agent-loop`
  * names the task key; `native-loop` reads its instruction from a prompt; the demo passes
  * a whitelist of commands. All of them prove the protocol works when someone already
@@ -37,6 +43,7 @@
  *
  * Exit codes: 0 every step passed, 1 a step failed, 2 usage or configuration error.
  */
+import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -89,6 +96,24 @@ function record(name, ok, detail) {
   return ok
 }
 
+/** Every id-shaped number in a response, in the order they appear. */
+function collectIds(value, acc = []) {
+  if (Array.isArray(value)) { for (const v of value) collectIds(v, acc); return acc }
+  if (value && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) {
+      if ((k === 'id' || k === 'ids') && Number.isInteger(v)) acc.push(v)
+      else if (k === 'id' && Array.isArray(v)) acc.push(...v.filter(Number.isInteger))
+      else collectIds(v, acc)
+    }
+  }
+  return acc
+}
+
+/** A short, stable digest so two tapes can be compared without shipping contents. */
+function digest(value) {
+  return createHash('sha256').update(JSON.stringify(value ?? null)).digest('hex').slice(0, 16)
+}
+
 /** Every RPC that leaves a process, in order. The tape is the evidence. */
 const tape = []
 class Traced extends McpAgent {
@@ -100,7 +125,15 @@ class Traced extends McpAgent {
     const at = Date.now()
     try {
       const result = await super.rpc(method, params)
-      tape.push({ agent: this.name, at, method, tool: params?.name ?? null, args: params?.arguments ?? null, ok: true })
+      tape.push({
+        agent: this.name, at, method, tool: params?.name ?? null,
+        args: params?.arguments ?? null, ok: true,
+        // The ids in the response, not the whole response: that is the fact the claim
+        // rests on ("this id came out of that call"), and it keeps the tape free of
+        // anything a reader should not have to trust us about.
+        resultIds: collectIds(result),
+        resultDigest: digest(result),
+      })
       return result
     } catch (err) {
       tape.push({ agent: this.name, at, method, tool: params?.name ?? null, args: params?.arguments ?? null, ok: false, error: String(err?.message ?? err) })
@@ -209,8 +242,8 @@ try {
       inbox.ok === true && items.length === 0, `items=${items.length}`)
 
     const stolen = await rival.tool('acm_claim', { id: discovered?.id })
-    record('it cannot claim the item the worker already finished',
-      stolen.ok === true && stolen.value?.ok === false,
+    record('it cannot claim the item the worker already finished, for the stated reason',
+      stolen.ok === true && stolen.value?.ok === false && stolen.value?.reason === 'not-your-inbox',
       String(stolen.value?.reason ?? stolen.error ?? '').slice(0, 120))
   }
 
@@ -221,7 +254,12 @@ try {
     record('the worker made only calls it could name from the listing',
       toolCalls.every((t) => tools.includes(t.tool)),
       toolCalls.map((t) => t.tool).join(' -> '))
-    record('no id reached the worker before the listing response did',
+    const inboxCall = byWorker.find((t) => t.tool === 'acm_inbox')
+    const claimCall = byWorker.find((t) => t.tool === 'acm_claim')
+    record('the id the claim used appears in the inbox response, per the tape',
+      Boolean(inboxCall?.resultIds?.includes(claimCall?.args?.id)),
+      `inbox ids ${JSON.stringify(inboxCall?.resultIds ?? [])} -> claim ${JSON.stringify(claimCall?.args ?? {})}`)
+    record('no id was sent before the inbox response arrived',
       byWorker.findIndex((t) => t.tool === 'acm_inbox') < byWorker.findIndex((t) => t.tool === 'acm_claim'),
       byWorker.map((t) => t.tool ?? t.method).join(' -> '))
     const claimArgs = toolCalls.find((t) => t.tool === 'acm_claim')?.args ?? {}
