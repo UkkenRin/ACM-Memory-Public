@@ -49,7 +49,12 @@ const BINARY_SKIP = [
  */
 function treeFiles(dir, acc = []) {
   for (const name of readdirSync(dir)) {
-    if (name === '.git' || name === 'node_modules') continue
+    if (name === '.git') continue
+    // Only the dependency tree at the root is machine-local noise. A directory named
+    // `node_modules` *inside* the product is vendored code that ships
+    // (`lib/vendor/ort/node_modules`), and skipping it made this scan's stated scope
+    // narrower than the tree it claimed to cover: 114 files of 143, silently.
+    if (name === 'node_modules' && dir === root) continue
     const abs = join(dir, name)
     let st
     try { st = statSync(abs) } catch { continue }

@@ -1,7 +1,7 @@
 {
-  "exportId": "290cbbd8fcb4",
+  "exportId": "5be295f4f92c",
   "tool": 2,
-  "createdAt": "2026-11-17T11:45:55.576Z",
+  "createdAt": "2026-11-17T11:56:20.988Z",
   "note": "Public manifest. It carries file hashes and an export id only: the private source commit is recorded on the private side, deliberately.",
   "files": {
     ".gitattributes": "07b93b4f86f8746c5cb71f13eb50ad0a6c7bdd3a7fbe42c9047fda8db3beace5",
@@ -84,7 +84,7 @@
     "scripts/check-doc-links.mjs": "3b4f569121ce414c4d0ec962bebcf5eaaf103c5fc603b7bb2964a1f4140f7163",
     "scripts/check-package.mjs": "cdbc08cfb6ccb1d0165454db79a1fd29d38ababcb29f8b8595a4e01902bd518b",
     "scripts/check-repository-language.mjs": "d9786c37ac585c5e67433c91d3fb813c1dd68877160d940cd1e781d4ee0b5b7e",
-    "scripts/check-secrets.mjs": "6d67d71353778541c3f7b19f4f3f719cb8d48c73ad3072ead0ec1cc45672a7a5",
+    "scripts/check-secrets.mjs": "536a4a5b4632b843272d3cd00d9e416e8173b68770efeb10770d90f50d8d1d58",
     "scripts/check-syntax.mjs": "3d0be601b96be98ee409a4cad67205fd12461e01c151fafd7d9f113f72241f7c",
     "scripts/check-third-party.mjs": "14d5ebb16639bfbc26a43dfd8b8f3aab4ba98c21f168e0ab775231b72d743c07",
     "scripts/mcp-agent.mjs": "3cc4e9d37f9d7306f44528356a9722fca5984c12272249410744b463c57d1b3e",
