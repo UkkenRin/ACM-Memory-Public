@@ -28,12 +28,71 @@ item below is a property of the current code, not a bug we are about to fix.
 
 ## Identity and isolation
 
-- There is **no authentication and no read permission model**. `ACM_AGENT`,
-  `ACM_OWNER` and `acm task --actor` are labels, not credentials: any process that
-  can read the database file can read every fact in it.
+- There is **no authentication**. `ACM_AGENT`, `ACM_OWNER` and `acm task --actor` are
+  labels, not credentials: any process that can read the database file can read every
+  fact in it. `auth.mode: 'scoped'` requires a live grant before a read or a task
+  transition, and the tool and resource surfaces ask for one too — but the principal
+  that asks is still declared by the caller. A grant is a permission record, not proof
+  of who is calling.
+- **Every tool declares the verb it needs, and an upgrade does not grant it.** Until the missing verbs were required, seven tools had no verb at all, so a `scoped` store answered them to
+  a caller holding no grant. Declaring the verb changes what an existing deployment may
+  do: `acm_history` now needs `memory:read`, `acm_checkpoint` and `acm_feedback` need
+  `memory:write-session`, `acm_alias` needs `memory:write-global`, `acm_forget` needs
+  `memory:forget`, and `acm_gc` / `acm_evolve` need the new `operator:maintain`. None of
+  those is backfilled. A scoped install that relied on the missing gates will start
+  refusing, and the refusal names the verb, so the fix is a grant rather than a guess.
+  `operator:maintain` also stops store-wide maintenance from borrowing
+  `memory:write-global` (on the SDK side too): a principal allowed to record a fact is no
+  longer allowed to purge the store or reweight retrieval because of it. `adminTools` and
+  the single-user condition on those two remain, and they are independent of the verb -
+  neither implies the other.
+- **Project isolation covers tasks, not memory.** `acm_tasks` carries a `project`
+  column, and every task read and transition requires the caller's project to match the
+  task's. `acm_nodes` has no such column, so retrieval, injection and export read the
+  whole owner partition whatever project a handle declares. `fold()` is therefore an
+  owner-wide view; writing it to disk is an operator action that needs an untargeted
+  `operator:export` grant, and in scoped mode the destination must be inside the
+  configured `exportDir`. That directory must already exist; no configured directory
+  means no export to disk. Below it, every path component is inspected with `lstat`,
+  which reports the directory entry rather than following it — so a link is seen
+  whether or not its target exists. Any link on the way, dangling or not, is refused
+  rather than resolved, intermediate directories must already exist and be real
+  directories, and the destination must be absent or an existing regular file. The
+  file is then opened once, with `O_NOFOLLOW` where the platform has it, and written
+  through that handle, so the final component cannot be swapped for a link between the
+  check and the write. Two limits remain, and they are real: `O_NOFOLLOW` covers only
+  the last component, so an intermediate directory swapped after validation is not
+  caught (Node exposes no `openat`), and on Windows there is no such flag, so the
+  `lstat` check is the whole guard there. Treat "memory is private per project" as not
+  implemented, not as a promise.
+- **A project-targeted `memory:read` is an authorization shape, not a filter.** It says
+  which project's *tasks* a principal may touch, and it bounds the grant record; it does
+  not narrow what retrieval, injection or `fold()` return, which stay owner-wide. Do not
+  read `memory:read` with `target: alpha` as "alpha cannot see beta's facts" — it can,
+  through `acm_search`, `acm://injection` and `fold()` without a path. The disk export is
+  where a project-targeted grant is refused, and only because the write is owner-wide, not
+  because the read is filtered.
+- **A mailbox is partition data, so it has both a read and a write verb.** `acm_inbox`
+  asks for `memory:read` before it looks, and `acm_send` asks for `mailbox:send` before
+  it inserts a row — delivering into an inbox is a write, and a read grant must not imply
+  it. The recipient is also the only agent that can claim or complete a message, which
+  the store enforces on the row rather than in the caller. What this does not do: it does
+  not authenticate the sender, so a principal with `mailbox:send` can still address any
+  agent in its partition, and the `from` field is a claim like every other label here.
+- **`mailbox:send` is a new verb, and upgrading does not grant it.** A `scoped` store that
+  was configured before this verb existed has no grant row for it, so a client that could
+  send will be refused until an operator adds `mailbox:send` to that principal. The upgrade
+  does not backfill a broad grant on the operator's behalf: silently widening a permission
+  during a version upgrade is exactly the kind of change a grant table exists to prevent.
+  The refusal names the verb, so the fix is visible in the error rather than in a changelog.
 - One store is one trust boundary: one person, one machine. Do not share a store
   between people, do not put it on a network share, and do not enable the optional
   HTTP surface on a network you do not control (it is off by default).
+- **Expired task leases are recovered by whoever holds `task:sweep`.** In scoped mode a
+  handle without that grant does not sweep when it opens, so a scheduler or an operator
+  holding the grant must call `taskExpireLeases()` after a restart. Nothing renews or
+  recovers a lease by itself, and the verb is never granted to a chat principal
+  implicitly.
 - A task's `confirmed` state is a record of what a person typed, not a
   cryptographic proof that a person approved anything.
 
@@ -56,6 +115,14 @@ item below is a property of the current code, not a bug we are about to fix.
   server (`acm-mcp`).
 - The optional HTTP routes are an integration point, not a service. They are off
   unless configured, and they are not hardened for untrusted clients.
+- **Startup maintenance is the operator's decision, not a client's.** The MCP stdio host
+  opens the database when it starts, and it takes a snapshot only when the process was
+  launched with `ACM_MAINTENANCE=1`. Without the flag a client can connect, list tools and
+  be refused a write without causing a backup, a prune or a task event. The CLI keeps its
+  startup snapshot because running `acm` is already an operator act.
+- There is no remote MCP transport yet. A hosted assistant cannot reach this store over
+  HTTP: the design is written down in [design/ACM_HTTP_TRANSPORT](design/ACM_HTTP_TRANSPORT.md)
+  and nothing in it is implemented.
 
 ## Collaboration features
 

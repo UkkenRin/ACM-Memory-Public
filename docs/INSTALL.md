@@ -13,11 +13,11 @@ and a writable directory. DSH is optional for the local CLI, MCP and SDK.
 - Roughly 60 MB of disk for the repository, most of it the bundled embedding
   model (24 MB) and ONNX Runtime WASM (15 MB).
 
-The repository is private. Install from a checkout:
+Install from a checkout of the public repository:
 
 ```bash
-git clone https://github.com/yu-x-an/ACM-Memory.git
-cd ACM-Memory
+git clone https://github.com/yu-x-an/ACM-Memory-Public.git
+cd ACM-Memory-Public
 node --version          # must be >= 22
 node test/run.mjs       # optional smoke check
 ```
@@ -158,7 +158,7 @@ and both license texts must be included, while tests, CI files and scripts must
 not be. The unpacked size is expected around 38 MB; a large deviation means an
 asset went missing or something unreviewed was swept in.
 
-There is no publish step in this repository while it stays private.
+The package is not published to a registry; install from the repository checkout shown above.
 
 ## Running the test suite
 

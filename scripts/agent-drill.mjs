@@ -104,6 +104,13 @@ const settleAll = (err) => {
   }
   pending.clear()
 }
+// `exit` fires when the process ends; `close` fires when its stdio is also
+// done. The shutdown path waits on close, because killing between the two is
+// what left a handle mid-close on Windows.
+const childClosed = new Promise((resolve) => {
+  child.once('close', (code, signal) => resolve({ code, signal }))
+})
+
 child.on('exit', (code, signal) => {
   childGone = `mcp server exited (code ${code ?? 'null'}, signal ${signal ?? 'none'}) before replying`
   settleAll(new Error(childGone))
@@ -112,7 +119,8 @@ child.on('error', (err) => {
   childGone = `mcp server failed to start: ${err?.message ?? err}`
   settleAll(new Error(childGone))
 })
-createInterface({ input: child.stdout }).on('line', (line) => {
+const rl = createInterface({ input: child.stdout })
+rl.on('line', (line) => {
   if (!line.trim()) return
   let msg
   try { msg = JSON.parse(line) } catch { return }
@@ -260,8 +268,32 @@ try {
   console.error(`drill aborted: ${err?.message ?? err}`)
   exitCode = 1
 } finally {
-  // Never leave the server process behind, on any path out of here.
+  // Never leave the server process behind, on any path out of here, and do not
+  // exit while it is still closing:
   settleAll(new Error('drill finished'))
-  try { child.kill() } catch {}
+  try { rl.close() } catch {}
+  await stopChild()
 }
-process.exit(exitCode)
+// Let the loop drain after the child is closed. A forced exit while a stdio
+// handle is still closing aborted libuv on Node 24/Windows.
+process.exitCode = exitCode
+
+/** Ask the MCP child to finish, wait for it, then force it. Bounded, never hanging. */
+async function stopChild() {
+  // EOF on stdin is the protocol-level "no more requests", so the server can
+  // close its own database and exit cleanly.
+  try { child.stdin.end() } catch {}
+  const graceful = await Promise.race([
+    childClosed.then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 5000)),
+  ])
+  if (graceful) return
+  try { child.kill() } catch {}
+  const killed = await Promise.race([
+    childClosed.then(() => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 2000)),
+  ])
+  if (killed) return
+  try { child.kill('SIGKILL') } catch {}
+  await Promise.race([childClosed, new Promise((resolve) => setTimeout(resolve, 1000))])
+}

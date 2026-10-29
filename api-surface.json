@@ -272,6 +272,7 @@
       "renewTask",
       "retryTask",
       "returnTask",
+      "sweepExpiredLeases",
       "taskEvents",
       "verifyTask"
     ]

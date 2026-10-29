@@ -533,5 +533,10 @@ try {
 
   console.log(`\nmigration: ${pass} passed`)
 } finally {
-  rmSync(dir, { recursive: true, force: true })
+  try {
+        rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+      } catch (err) {
+        console.log('  cleanup left files:', readdirSync(dir).join(', '))
+        throw err
+      }
 }

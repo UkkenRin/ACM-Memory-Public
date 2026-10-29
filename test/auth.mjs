@@ -301,6 +301,10 @@ ok('upserting twice updates instead of duplicating',
     const freePlanner = cfg('planner-free', null)
     const freeWorker = cfg('worker-free', null)
     grant(projDb, { principal: principalFromConfig(freePlanner), action: 'task:create', grantedBy: 'owner' })
+    // Reading a task is a memory read: `acm_task_get` asks for it before it
+    // looks the key up, so a principal that may create work must also be able
+    // to see it. Null target: this planner declares no project.
+    grant(projDb, { principal: principalFromConfig(freePlanner), action: 'memory:read', target: null, grantedBy: 'owner' })
     grant(projDb, { principal: principalFromConfig(freeWorker), action: 'task:accept', target: null, grantedBy: 'owner' })
     grant(projDb, { principal: principalFromConfig(freeWorker), action: 'task:return', target: null, grantedBy: 'owner' })
     const freeTask = await call('acm_task_create', { title: 'no project', assignee: 'worker-free' }, freePlanner)
@@ -312,13 +316,16 @@ ok('upserting twice updates instead of duplicating',
     ok('the project-less task reaches returned', freeReturned.ok === true && freeReturned.task.state === 'returned')
 
     // The alpha reviewer holds an alpha-targeted verify grant from the cases above.
-    const before = await call('acm_task_get', { key: freeKey }, reviewer)
+    // The read is taken by a caller that is allowed to see the task: the reviewer's
+    // own `task_get` is now refused for a NULL-project task, which is the same
+    // boundary this case is about, so using it as the witness would prove nothing.
+    const before = await call('acm_task_get', { key: freeKey }, freePlanner)
     const reachNull = await attempt('acm_task_verify', { key: freeKey }, reviewer)
     const nullUnknown = await attempt('acm_task_verify', { key: 'T-unknown-3333' }, reviewer)
     ok('a project-scoped reviewer cannot verify a NULL-project task, nor tell it from an unknown key',
       reachNull.reason === 'not-found' && JSON.stringify(reachNull) === JSON.stringify(nullUnknown),
       `${JSON.stringify(reachNull)} vs ${JSON.stringify(nullUnknown)}`)
-    const after = await call('acm_task_get', { key: freeKey }, reviewer)
+    const after = await call('acm_task_get', { key: freeKey }, freePlanner)
     ok('and the refused call changed nothing about the task',
       JSON.stringify(before.task) === JSON.stringify(after.task) &&
       before.events.length === after.events.length,
@@ -335,6 +342,8 @@ ok('upserting twice updates instead of duplicating',
     const betaPlanner = cfg('planner-beta', 'beta')
     const betaWorker = cfg('worker-beta', 'beta')
     grant(projDb, { principal: principalFromConfig(betaPlanner), action: 'task:create', target: 'beta', grantedBy: 'owner' })
+    // A task read is a memory read now, so the witness below needs the grant.
+    grant(projDb, { principal: principalFromConfig(betaPlanner), action: 'memory:read', target: 'beta', grantedBy: 'owner' })
     grant(projDb, { principal: principalFromConfig(betaWorker), action: 'task:accept', target: 'beta', grantedBy: 'owner' })
     grant(projDb, { principal: principalFromConfig(betaWorker), action: 'task:return', target: 'beta', grantedBy: 'owner' })
     const betaTask = await call('acm_task_create', { title: 'beta work', assignee: 'worker-beta' }, betaPlanner)

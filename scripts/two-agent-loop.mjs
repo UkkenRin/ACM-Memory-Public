@@ -35,14 +35,14 @@
  *
  * Exit codes: 0 every step passed, 1 a step failed, 2 usage or configuration error.
  */
-import { spawn, spawnSync } from 'node:child_process'
-import { createInterface } from 'node:readline'
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { openDb } from '../lib/db.mjs'
+import { McpAgent } from './mcp-agent.mjs'
 import { grant, principalFromConfig, ACTIONS } from '../lib/auth.mjs'
 import { mergeConfig } from '../lib/core.mjs'
 import { storeRefusal } from './store-guard.mjs'
@@ -101,81 +101,17 @@ function databasePath() {
  */
 let dbPath = null
 
-class Agent {
+/** The three-agent driver and the audit driver share one client implementation. */
+class Agent extends McpAgent {
   constructor(name, extraEnv = {}) {
-    this.name = name
-    this.pending = new Map()
-    this.nextId = 1
-    this.stderr = ''
-    this.dead = null
-    this.env = {
-      ...process.env,
-      ACM_DB: dbPath,
-      ACM_SESSION: `loop-${name}`,
-      ACM_AGENT: name,
-      ACM_AUTH_MODE: 'scoped',
-      ACM_PROJECT: extraEnv.project ?? project,
-      ...(extraEnv.env ?? {}),
-    }
-    this.child = spawn(process.execPath, [mcpPath], { env: this.env, stdio: ['pipe', 'pipe', 'pipe'] })
-    this.child.stderr.on('data', (chunk) => { this.stderr += String(chunk) })
-    this.child.on('exit', (code, signal) => {
-      this.dead = `exit ${code ?? signal}`
-      for (const [, entry] of this.pending) entry.reject(new Error(`${this.name} died: ${this.dead}`))
-      this.pending.clear()
+    super(name, {
+      dbPath,
+      mcpPath,
+      project: extraEnv.project ?? project,
+      rpcTimeout,
+      sessionPrefix: 'loop-',
+      env: extraEnv.env ?? {},
     })
-    const rl = createInterface({ input: this.child.stdout })
-    rl.on('line', (line) => {
-      const text = line.trim()
-      if (!text) return
-      let msg
-      try { msg = JSON.parse(text) } catch { return }
-      const entry = this.pending.get(msg.id)
-      if (!entry) return
-      this.pending.delete(msg.id)
-      clearTimeout(entry.timer)
-      if (msg.error) entry.reject(new Error(`${msg.error.code}: ${msg.error.message}`))
-      else entry.resolve(msg.result)
-    })
-  }
-
-  rpc(method, params) {
-    if (this.dead) return Promise.reject(new Error(`${this.name} is gone (${this.dead})`))
-    const id = this.nextId++
-    return new Promise((resolvePromise, rejectPromise) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id)
-        rejectPromise(new Error(`${this.name} timed out on ${method} after ${rpcTimeout}ms`))
-      }, rpcTimeout)
-      this.pending.set(id, { resolve: resolvePromise, reject: rejectPromise, timer })
-      this.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id, method, params })}\n`)
-    })
-  }
-
-  async start() {
-    const info = await this.rpc('initialize', {
-      protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'two-agent-loop', version: '1' },
-    })
-    this.child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`)
-    return info
-  }
-
-  /** One tool call. Returns `{ok:true, value}` or `{ok:false, error}`; never throws. */
-  async tool(name, args = {}) {
-    const result = await this.rpc('tools/call', { name, arguments: args })
-    if (result?.isError) return { ok: false, error: String(result.content?.[0]?.text ?? 'isError') }
-    return { ok: true, value: result?.structuredContent ?? null }
-  }
-
-  kill(signal = 'SIGKILL') {
-    if (!this.dead) { try { this.child.kill(signal) } catch {} }
-  }
-
-  async stop() {
-    if (this.dead) return
-    try { this.child.stdin.end() } catch {}
-    await new Promise((r) => { const t = setTimeout(r, 1500); this.child.once('exit', () => { clearTimeout(t); r() }) })
-    this.kill()
   }
 }
 
@@ -200,11 +136,15 @@ say(`two-agent loop on ${dbPath}`)
 // ── Setup: identities and grants. This is the operator's act, not an agent's.
 {
   const db = openDb(dbPath)
+  // Every role reads the partition it works in: `acm_task_list` and `acm_task_get`
+  // are memory reads now, and a caller with no `memory:read` grant is refused
+  // before the key is looked up. The read grant is the narrowest one that lets a
+  // role see its own project's work.
   const identities = [
-    ['planner', 'alpha', ['task:create', 'task:assign', 'task:retry', 'task:cancel']],
-    ['worker', 'alpha', ['task:accept', 'task:renew', 'task:return']],
-    ['reviewer', 'alpha', ['task:verify', 'task:reject']],
-    ['reviewer-beta', 'beta', ['task:verify']],
+    ['planner', 'alpha', ['memory:read', 'task:create', 'task:assign', 'task:retry', 'task:cancel']],
+    ['worker', 'alpha', ['memory:read', 'task:accept', 'task:renew', 'task:return']],
+    ['reviewer', 'alpha', ['memory:read', 'task:verify', 'task:reject']],
+    ['reviewer-beta', 'beta', ['memory:read', 'task:verify']],
   ]
   for (const [agent, target, actions] of identities) {
     const principal = principalFromConfig(mergeConfig({ agent, project: target }))
@@ -395,8 +335,13 @@ try {
     const sweep = spawnSync(process.execPath, [cliPath, 'task', 'expire'], { env: sweepEnv, encoding: 'utf8' })
     let swept = []
     try { swept = JSON.parse(sweep.stdout).expired ?? [] } catch {}
+    // Opening the store now sweeps expired leases, so the explicit command may find
+    // nothing left to expire. What the drill has to prove is that a different
+    // process recovered the dead lease, not that it was this particular command.
+    const recoveredByOpen = (await planner.tool('acm_task_get', { key: crashKey })).value?.task?.state === 'expired'
     record('a different process sweeps the dead lease into expired',
-      sweep.status === 0 && swept.includes(crashKey), JSON.stringify(swept))
+      sweep.status === 0 && (swept.includes(crashKey) || recoveredByOpen),
+      `${JSON.stringify(swept)}${recoveredByOpen ? ' (expired when the store was opened)' : ''}`)
     const afterSweep = await planner.tool('acm_task_get', { key: crashKey })
     record('the task is expired, not silently still running',
       afterSweep.value?.task?.state === 'expired', afterSweep.value?.task?.state ?? '?')

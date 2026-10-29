@@ -39,15 +39,22 @@ const ALLOWED_SCRIPT_DIFF = new Set([
   'mirror:hooks',
   'mirror:sync',
   'mirror:dry-run',
+  'test:collab-view',
+  'test:public-boundary',
 ])
 
 const strip = (pkg) => {
+  // Canonical key order: the assertion is about the same fields and values, and a
+  // JSON.stringify comparison is otherwise sensitive to where a new script was
+  // inserted.
+  const sortKeys = (o) => Object.fromEntries(Object.keys(o).sort().map((k) => [k, o[k]]));
   const copy = JSON.parse(JSON.stringify(pkg))
   copy.scripts = { ...copy.scripts }
   for (const key of ALLOWED_SCRIPT_DIFF) delete copy.scripts[key]
   delete copy.scripts['test:history']
   delete copy.files
-  return copy
+  copy.scripts = sortKeys(copy.scripts)
+  return sortKeys(copy)
 }
 
 /** The mirror ships the public variant; the development tree ships both. */

@@ -1,4 +1,4 @@
-name: CI
+name: CI (public mirror)
 
 # The mirror's workflow. It runs the same suite as the development repository, minus
 # the two checks that need historical material this repository does not carry: the
@@ -9,11 +9,23 @@ name: CI
 #
 # Six legs on purpose: a public repository's standard runners are free, so this is
 # the only place the full Linux/Windows/macOS x Node 22/24 matrix can run every time.
-# It runs on push and on demand, so there is no second "full" workflow to drift.
+#
+# **This file is written for the mirror, and the mirror is where it runs.** The
+# private development repository carries it too, because the export copies it, and
+# until now it also *ran* there: every push to `main` paid for a second six-leg
+# matrix (macOS is billed at 10x) next to `ci.yml`. Measured over 41 runs in the
+# private repository that was 1,919 billed minutes, about 47 per push, for a suite
+# that `ci.yml` had already run on the same commit. The job is skipped when the
+# repository is private - a skipped job is not billed - and the condition is the
+# repository's own visibility, so a fork behaves the same way.
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: ci-public-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -21,6 +33,7 @@ permissions:
 jobs:
   test:
     name: ${{ matrix.os }} / node ${{ matrix.node }}
+    if: github.event.repository.private == false
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
