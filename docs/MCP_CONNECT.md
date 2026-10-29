@@ -121,7 +121,50 @@ failing without saying why.
 Granting is an operator act and lives in `lib/auth.mjs`; the scoped-handle tests in this
 repository grant from there if you want a working example.
 
-## 5. What this page does not cover
+## 5. The same store with grants: three roles, one task
+
+A store that refuses everything and a store that refuses nothing look identical to a
+negative test. `scripts/mcp-scoped-flow.mjs` covers the other half: it seeds grants for
+three principals, then starts four servers - one at a time, each its own process and
+session - and makes them do one piece of work end to end.
+
+```sh
+node scripts/mcp-scoped-flow.mjs --fresh --db /tmp/acm-scoped-flow.sqlite
+```
+
+| principal | verbs it holds |
+|---|---|
+| `planner` | `memory:read`, `memory:write-global`, `mailbox:send`, `task:create`, `task:assign` |
+| `worker` | `memory:read`, `mailbox:claim`, `mailbox:complete`, `task:accept`, `task:renew`, `task:return`, `task:verify` |
+| `reviewer` | `memory:read`, `task:verify`, `task:reject` |
+| `intruder` | none |
+
+The transcript (31 checks) is the evidence, not the table:
+
+```
+ok   planner sees the tool its grant names - 11 tools
+ok   planner does not see a verb it does not hold
+ok   a principal without mailbox:claim cannot take it - not authorized: mailbox:claim (no-grant)
+ok   worker discovers the task from the store - 1 listed
+ok   worker holds task:verify and still cannot verify its own work - self-verification-refused
+ok   reviewer verifies
+ok   the verifier is recorded as the reviewer - reviewer
+ok   no grants means one tool, the one that explains why - acm_capabilities
+ok   a new session reads the whole trail - assigned -> running -> returned -> verified
+scoped flow: 31 checks, 0 failed
+```
+
+Two details are deliberate. `worker` holds `task:verify`, so the refusal it gets on its own
+return is `self-verification-refused` - about who it is, not about what it was allowed. And
+the task key is read back from `acm_task_list` rather than passed in, so the worker has to
+find its work the way an agent would.
+
+Grants are seeded through `lib/auth.mjs`, which is setup, not evidence: every assertion
+after that comes from a JSON-RPC answer over the pipe. To check that the negatives are real,
+comment out the `mode === 'local'` branch in `authorize()` and rerun - five checks go red,
+including the two that name a verb in the refusal.
+
+## 6. What this page does not cover
 
 - **A listener.** Nothing here binds a socket. Exposing this surface over HTTP is a
   different object with a different threat model, and it is not configured in this
