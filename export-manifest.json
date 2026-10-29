@@ -1,7 +1,7 @@
 {
-  "exportId": "de85c6feff2b",
+  "exportId": "4455f15051b1",
   "tool": 2,
-  "createdAt": "2026-11-17T23:26:04.673Z",
+  "createdAt": "2026-11-17T23:39:09.730Z",
   "note": "Public manifest. It carries file hashes and an export id only: the private source commit is recorded on the private side, deliberately.",
   "files": {
     ".gitattributes": "07b93b4f86f8746c5cb71f13eb50ad0a6c7bdd3a7fbe42c9047fda8db3beace5",
@@ -79,7 +79,7 @@
     "lib/vendor/ort/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm": "4b884c203b0fa48d057be3332c65513ff85aa3c5bddd6946acc0fab7ecda001d",
     "lib/vendor/ort/node_modules/onnxruntime-web/dist/ort.node.min.mjs": "9bdb8aaab1d0deabe6f38572ad4d6f8b793bad8a5e184f8aa4fcc0d8cace7810",
     "lib/vendor/ort/node_modules/onnxruntime-web/package.json": "81fa53b6bf23c91d6fdd37dac97ebec558048bbd14ccbcc02e54fb47d3c1c699",
-    "package.json": "4ea596199a1081742accb6cb1ee737d67b3c50e235c396e3617b8d1f2f7d945f",
+    "package.json": "cd80ee7f4cdae2d901315014a396fb08ead538e532cf0056e603acb71b95d61d",
     "scripts/agent-drill.mjs": "54a6433e03c5bd1d0f782ec28f8c5bddaf533684436c3867916f9c8751f9e1dc",
     "scripts/check-api.mjs": "809c6f5612f9839b7d86d6ed88b383037377bb682ab854f484d62fd0e3772ff9",
     "scripts/check-doc-links.mjs": "3b4f569121ce414c4d0ec962bebcf5eaaf103c5fc603b7bb2964a1f4140f7163",
@@ -141,6 +141,7 @@
     "test/sdk-auth.mjs": "9af87bd036aa75028b9625205989f56bac3c6ea45d21414bff6d6116ccbbdb19",
     "test/sdk-boundary.mjs": "d77cd4dd84432be47b80c189014fd14eebf8a82dbba6e941b549eaa53095ba8c",
     "test/sdk-grant-expiry.mjs": "1a23aec0cfac4cbaa4f03db026712a137eec6e6f676836402df34d15ecc49862",
+    "test/sdk-identity.mjs": "8858630e524b3a4d392dbdf1de1f2482c5f17f98b756c3e82d33de7351a55b06",
     "test/sdk-surfaces.mjs": "5a1b3e6040eda0676205f7d55f76cf678318a4c6f657c7ccffe1ca84bcda2976",
     "test/sdk-task.mjs": "08de40c06682a438d51d3da4eb96d7497b05f27e3662121cf3497fa41d704d70",
     "test/security.mjs": "fb0c51e12c1631b0e7a5faf4b8f1c55d6497702e4b014f8a1ebf8cb167eeced6",
