@@ -121,8 +121,44 @@ item below is a property of the current code, not a bug we are about to fix.
   be refused a write without causing a backup, a prune or a task event. The CLI keeps its
   startup snapshot because running `acm` is already an operator act.
 - There is no remote MCP transport yet. A hosted assistant cannot reach this store over
-  HTTP. The design notes stay in the private repository and nothing in them is
-  implemented, so this public tree describes only what it ships.
+  HTTP: there is no listener, no socket and no TLS anywhere in this build, and the design
+  notes stay in the private repository. The ordering a transport would need -
+  credential, then principal, then grant, then one operation - is exercised end to end in
+  the development tree against a real store, and the protocol half (`initialize`,
+  `tools/list`, `tools/call`, one session per verified principal) is answered by a handler
+  that takes a request object and returns a status, headers and a body. That handler is
+  not published and does not listen. It exists so the protocol can be tested without a
+  port, and so the process that would expose it has exactly one job left.
+- **A credential can be a signature instead of a shared secret, and that is still not a
+  transport.** With `ACM_KEYRING` the store verifies an Ed25519 signature over each
+  request against enrolled public keys, so the serving side holds no secret and a captured
+  credential does not work against a different request. The process doing the verifying
+  is the same process holding the database, so on one machine this changes what has to be
+  stolen, not what has to be reached. There is no listener, no TLS and no pairing, and the
+  nonce inside a signed request is remembered only by the process that saw it: a captured
+  request is refused for as long as that process lives, and a restart forgets every nonce -
+  so a proof captured before a crash stays replayable for the rest of its minute. A bearer
+  token carries no nonce at all and is replayable until it expires. This tool therefore
+  claims **no network replay protection**: it is an offline, single-process, owner-only
+  store, and a listener reachable by anyone else would have to land a mechanism that
+  survives a restart - durable consumption, or an epoch that makes proofs issued before the
+  restart unverifiable - before it could be described in any other way. Keeping nonces in
+  memory is a stated limit with a stated cost, not a table someone forgot to add: a durable
+  nonce is a write that must commit before every reply, and one that does not commit before
+  the reply is a guarantee that quietly ends at the crash.
+- **The handler bounds a caller, and the numbers are written down.** Four requests in
+  flight per principal, a bucket of ten with one refill per second, and 256 principals of
+  state; the excess is `429` with `retry-after`, and an unauthenticated request is neither
+  counted nor allowed to create state. Eight live sessions per principal and 512 per
+  process, refused with `429` and a `retry-after` that names a real session's expiry - the
+  caller's own oldest when its own count refused it, the table's oldest when the table is
+  full; a refusal opens nothing and no live session is evicted. An already-spent proof is refused before any
+  allowance is charged, and a caller's own allowance is checked before the shared record of
+  spent nonces is written, so neither a replay nor a request that is already being refused
+  for rate can cost another client anything. The window a nonce must outlive is fixed by the
+  signature, not by configuration. Those numbers are chosen for one owner and a handful
+  of clients. They are not a capacity plan, they do not bound an anonymous flood - that is
+  a connection-level job - and nothing here has been measured against a real workload.
 
 ## Collaboration features
 

@@ -39,8 +39,23 @@ const ALLOWED_SCRIPT_DIFF = new Set([
   'mirror:hooks',
   'mirror:sync',
   'mirror:dry-run',
+  'prepublish:check',
   'test:collab-view',
   'test:public-boundary',
+  // The remote path's test spawns the executable that drives the internal credential
+  // and storage modules, so the mirror has neither the test nor the command.
+  'test:remote',
+  // Same reason, one layer up: the HTTP handler test signs tokens with the internal
+  // token module and asserts against the internal grant tables.
+  'test:http-handler',
+  // The trust store and the device credential are internal modules, so their tests and
+  // their shorter run scripts are too.
+  'test:keyring',
+  'test:device',
+  // The replay cache and the per-principal bound are internal modules, so their tests and
+  // their shorter run scripts are too.
+  'test:replay',
+  'test:limits',
 ])
 
 const strip = (pkg) => {
@@ -53,9 +68,15 @@ const strip = (pkg) => {
   for (const key of ALLOWED_SCRIPT_DIFF) delete copy.scripts[key]
   delete copy.scripts['test:history']
   delete copy.files
+  // `bin` is compared on its own below, in one direction only. Deleting it here keeps
+  // the field-by-field assertion about the fields that must be identical.
+  delete copy.bin
   copy.scripts = sortKeys(copy.scripts)
   return sortKeys(copy)
 }
+
+const manifest = JSON.parse(readFileSync(`${root}public-manifest.json`, 'utf8'))
+const internalGlobs = new Set(manifest.internalOnly.map((r) => r.glob))
 
 /** The mirror ships the public variant; the development tree ships both. */
 const inMirror = a.scripts['test:history'] === undefined
@@ -75,7 +96,18 @@ if (inMirror) {
 } else {
   ok('every field outside the documented set is identical',
     JSON.stringify(strip(a)) === JSON.stringify(strip(b)),
-    'name, version, bin, engines, dependencies, dsh and the other scripts must match')
+    'name, version, engines, dependencies, dsh and the other scripts must match')
+  // A binary may not be *added* for the mirror: a command that exists only there is a
+  // command with no tested implementation. It may be omitted, and only when the file it
+  // points at is internal - otherwise the public package would advertise an executable
+  // that `npm pack` does not ship, which fails on the user's machine rather than here.
+  ok('the public variant advertises no binary the private one does not',
+    Object.keys(b.bin).every((k) => a.bin[k] === b.bin[k]),
+    JSON.stringify(b.bin))
+  const omittedBins = Object.keys(a.bin).filter((k) => !(k in b.bin))
+  ok('every binary the public variant omits points at an internal file',
+    omittedBins.length > 0 && omittedBins.every((k) => internalGlobs.has(a.bin[k])),
+    omittedBins.map((k) => `${k} -> ${a.bin[k]}`).join(', '))
   ok('the public variant does not advertise the private history command',
     b.scripts['test:history'] === undefined, String(b.scripts['test:history']))
   ok('the public variant does not advertise the mirror commands',

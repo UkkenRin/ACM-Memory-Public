@@ -16,7 +16,7 @@ and a writable directory. DSH is optional for the local CLI, MCP and SDK.
 Install from a checkout of the public repository:
 
 ```bash
-git clone https://github.com/yu-x-an/ACM-Memory-Public.git
+git clone https://github.com/UkkenRin/ACM-Memory-Public.git
 cd ACM-Memory-Public
 node --version          # must be >= 22
 node test/run.mjs       # optional smoke check

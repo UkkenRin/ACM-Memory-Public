@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { openDb } from '../lib/db.mjs'
 import {
   acceptTask, assignTask, cancelTask, confirmTask, createTask, expireLease, expireLeases, failTask, getTask,
-  listTasks, rejectTask, renewTask, retryTask, returnTask, taskEvents, verifyTask,
+  listTasks, normalizeEvidence, rejectTask, renewTask, retryTask, returnTask, taskEvents, verifyTask,
 } from '../lib/tasks.mjs'
 
 const work = mkdtempSync(join(tmpdir(), 'acm-tasks-'))
@@ -49,6 +49,17 @@ ok('returning without evidence is refused',
 const badEvidence = returnTask(db, { key, actor: 'runner', result: 'all good', evidence: [{ kind: 'vibes', ref: 'x' }], at: t0 + 4 })
 ok('evidence of an unknown kind is refused',
   badEvidence.ok === false && badEvidence.reason === 'evidence-required', JSON.stringify(badEvidence))
+ok('and the refusal names the kinds that would have been accepted',
+  Array.isArray(badEvidence.kinds) && badEvidence.kinds.includes('memory'),
+  JSON.stringify(badEvidence.kinds))
+
+// 3b. A memory key is evidence. This is the shape a hand-off actually produces: the
+// assignee's result was derived from a memory row, so the row is what it cites. Before
+// this kind existed the natural spelling `memory:result-x` was refused as malformed, and
+// the only place the allow-list appeared was the source file.
+const memoryShape = normalizeEvidence([{ kind: 'memory', ref: 'result-1' }])
+ok('memory is an accepted evidence kind',
+  memoryShape?.[0]?.kind === 'memory' && memoryShape[0].ref === 'result-1', JSON.stringify(memoryShape))
 
 // 4. Return, self-verification refusal, verification by someone else
 const returned = returnTask(db, {
