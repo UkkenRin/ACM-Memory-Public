@@ -39,6 +39,11 @@ const ALLOWED_SCRIPT_DIFF = new Set([
   'mirror:hooks',
   'mirror:sync',
   'mirror:dry-run',
+  // Gate 0 of the sync policy reads the *private* branch back through the API; in the
+  // mirror there is no private branch, and the command would need a token it should not
+  // have. Private-only by construction.
+  'remote:check',
+  'remote:check:mirror',
   'prepublish:check',
   'test:collab-view',
   'test:public-boundary',

@@ -1,7 +1,7 @@
 {
-  "exportId": "897eb1bfd1bc",
+  "exportId": "c58e302503dc",
   "tool": 2,
-  "createdAt": "2026-11-17T12:43:02.373Z",
+  "createdAt": "2026-11-17T13:55:15.386Z",
   "note": "Public manifest. It carries file hashes and an export id only: the private source commit is recorded on the private side, deliberately.",
   "files": {
     ".gitattributes": "07b93b4f86f8746c5cb71f13eb50ad0a6c7bdd3a7fbe42c9047fda8db3beace5",
@@ -128,7 +128,7 @@
     "test/message-idempotency.mjs": "49cc7c141727e92d2aab423633e88dfbe4b748026e7d523900394be5eb4d8022",
     "test/migration-lock.mjs": "32ad889cc893037e631f1ed4943bf1bc93c118e3ad07d0944aa1c54dfae20178",
     "test/migration.mjs": "69799d9fe953d451fadb791ab29d7a6b8b6f90fc37067dbea02f914000a23167",
-    "test/package-public-sync.mjs": "2127df662a6765427381ae157be0739b8d03768f74846d0213145274c324ca42",
+    "test/package-public-sync.mjs": "efc92dbfa63a9c3549f7c1ce3922f25a42569921a172ca01487b6bff48540edf",
     "test/principal-id.mjs": "239dc872de17348c858ac08bb5ae47ab3c8982ee5a3d0ba41ddd3d7a7bf52367",
     "test/public-test-wiring.mjs": "34170b273d24c40919ed179baca93e788a2a17a18af2814831564d6a3eff4eb4",
     "test/recovery.mjs": "cc23a18a4063884148f829939ccb2a95a378efb4dff6d9109552a65b82d0e456",
