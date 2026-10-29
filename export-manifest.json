@@ -1,7 +1,7 @@
 {
-  "exportId": "c58e302503dc",
+  "exportId": "18805a403a85",
   "tool": 2,
-  "createdAt": "2026-11-17T13:55:15.386Z",
+  "createdAt": "2026-11-17T23:05:58.976Z",
   "note": "Public manifest. It carries file hashes and an export id only: the private source commit is recorded on the private side, deliberately.",
   "files": {
     ".gitattributes": "07b93b4f86f8746c5cb71f13eb50ad0a6c7bdd3a7fbe42c9047fda8db3beace5",
@@ -40,7 +40,7 @@
     "lib/redact.mjs": "f862de2a901e436a379e5be916e4395b8427a9b6b26f42568fbecde54368a216",
     "lib/render.mjs": "482f6e557939e21307d2bdcc89026dab24fd59d07d5053c4a70c54feb96b10eb",
     "lib/retention.mjs": "b866cfe18593173b3a8001b8ce7cca65515a348c2e519681fbe2e1e76bef7112",
-    "lib/sdk.mjs": "b824947ef863906f95864e08adc990b84faf2d0f547ed174c0ec14d1936f06a4",
+    "lib/sdk.mjs": "a09d9c6692cc86b4e31ee08f087c168ef2a97fbb628f37b135cf4fa0554f9b06",
     "lib/tasks.mjs": "a389f4e8fa546fb8dc1b4938ecb202c65d3b2d7f066ec4f2241d3c41a7b69ce8",
     "lib/text.mjs": "084dfe0fba84f235ff66df25e3c4a9ba74862feec3f684210fe3a9ad829b5267",
     "lib/vec.mjs": "786f54538aed1f26049d48ddcd477d3535942de6b0c2a7f5b55fc0f4840c999e",
