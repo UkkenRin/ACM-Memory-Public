@@ -1,7 +1,7 @@
 {
-  "exportId": "a7b0242cf761",
+  "exportId": "1ce0946821fa",
   "tool": 2,
-  "createdAt": "2026-11-18T00:44:34.435Z",
+  "createdAt": "2026-11-18T01:05:27.238Z",
   "note": "Public manifest. It carries file hashes and an export id only: the private source commit is recorded on the private side, deliberately.",
   "files": {
     ".gitattributes": "07b93b4f86f8746c5cb71f13eb50ad0a6c7bdd3a7fbe42c9047fda8db3beace5",
@@ -92,7 +92,7 @@
     "scripts/mcp-agent.mjs": "3cc4e9d37f9d7306f44528356a9722fca5984c12272249410744b463c57d1b3e",
     "scripts/mcp-connect.mjs": "8053278d43313b1ab723df29cc8e0bbfb34cd044bf2bf8eba5453c68412ecd6a",
     "scripts/mcp-discovery.mjs": "11b2a4345d2aceedfbbe51c6c0fc8121e2105f8b966d4efeb207fd2053def3a2",
-    "scripts/mcp-scoped-flow.mjs": "0b268c9de2700defc4f47fa284b8b3422950f9b5a27f09ce9b9e2a4db438c9e1",
+    "scripts/mcp-scoped-flow.mjs": "c898818cd433fd5faa6f03aa3f2ff24c3122ef59520c0f9fae09eaaa62d015ec",
     "scripts/store-guard.mjs": "d080b860a4042f6cea3f2412994fa9be49dc6ede6beda340c518de85fa28919d",
     "scripts/two-agent-loop.mjs": "f6a50f91d056b61134cf167d636ab87cbb16747e0ce42dcd2584e9f461cd5ff0",
     "scripts/verify-export.mjs": "bd8d5a449e7a06b85a3cbfe268370c641541d3babc563f64c8ae014237e8d6a3",

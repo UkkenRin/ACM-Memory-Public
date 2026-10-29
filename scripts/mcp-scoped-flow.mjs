@@ -42,7 +42,21 @@ const keep = has('keep')
 const owner = flag('owner', 'scoped-flow')
 const mcpPath = flag('mcp', fileURLToPath(new URL('../lib/host/mcp.mjs', import.meta.url)))
 
-if (has('fresh')) rmSync(dbPath, { force: true })
+// The sidecars matter: SQLite leaves `-wal` and `-shm` behind, and a previous run that
+// was killed rather than closed keeps its handle on all three.
+const sidecars = [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]
+const removeStore = () => sidecars.filter((p) => {
+  try { rmSync(p, { force: true }); return false } catch { return true }
+})
+if (has('fresh')) {
+  const stuck = removeStore()
+  // Not best-effort here: reusing a store somebody else still holds means the run would
+  // measure a database it did not create, and the grants would already be there.
+  if (stuck.length) {
+    console.error(`cannot start from an empty store: still open: ${stuck.join(', ')}`)
+    process.exit(2)
+  }
+}
 mkdirSync(dirname(dbPath), { recursive: true })
 
 // The roles are grants, not names: nothing here says "planner may create" except
@@ -160,7 +174,14 @@ function startAgent(agent) {
     },
     async close() {
       try { child.stdin.end() } catch {}
-      child.kill()
+      // `kill()` returns before the process is gone, and Windows keeps the SQLite handle
+      // until it is. Waiting for `exit` is what makes the cleanup line below work there;
+      // the bound is only so a wedged child cannot hang the run.
+      if (!closed) {
+        const exited = new Promise((done) => child.once('exit', done))
+        child.kill()
+        await Promise.race([exited, new Promise((done) => setTimeout(done, 5_000))])
+      }
     },
   }
 }
@@ -291,7 +312,13 @@ try {
   record({ step: tape.length + 1, check: 'run aborted', ok: false, detail: String(err?.message ?? err) })
 }
 
-if (!keep) rmSync(dbPath, { force: true })
+if (!keep) {
+  const stuck = removeStore()
+  // Leaving scratch behind is untidy. Turning a green run red because a temp file could
+  // not be deleted is a worse lie, and it is the one this script told on Windows the first
+  // time it ran there (`PLAT-02`) - so the failure is a printed note, not an exit code.
+  if (stuck.length) console.log(`note: scratch not removed (${stuck.length} file(s), still open elsewhere)`)
+}
 if (logPath) console.log(`tape: ${logPath} (${tape.length} records)`)
 console.log(failures === 0 ? `\nscoped flow: ${tape.length} checks, 0 failed` : `\nscoped flow: ${tape.length} checks, ${failures} failed`)
 process.exit(failures === 0 ? 0 : 1)
