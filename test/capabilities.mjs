@@ -25,7 +25,7 @@ import { DatabaseSync } from 'node:sqlite'
 
 import { openDb } from '../lib/db.mjs'
 import { ACTIONS, grant, principalFromConfig, upsertPrincipal } from '../lib/auth.mjs'
-import { TOOLS, mergeConfig } from '../lib/core.mjs'
+import { TOOLS, mergeConfig, toolVerbs } from '../lib/core.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const mcpPath = join(here, '..', 'lib', 'host', 'mcp.mjs')
@@ -104,8 +104,14 @@ try {
     // `acm_capabilities` is excluded from its own list, so an empty list means
     // "nothing is callable without a verb", which is the property that was broken.
     ok('nothing is left without a verb', Array.isArray(caps?.ungated) && caps.ungated.length === 0, JSON.stringify(caps?.ungated))
-    ok('every other tool declares a verb', TOOLS.filter((x) => !BY_DESIGN_UNVERBED.includes(x.name)).every((x) => ACTIONS.includes(x.action)), TOOLS.filter((x) => !ACTIONS.includes(x.action)).map((x) => `${x.name}:${x.action ?? 'none'}`).join(','))
-    ok('no tool declares a verb that is not an action', TOOLS.every((x) => !x.action || ACTIONS.includes(x.action)), TOOLS.filter((x) => x.action && !ACTIONS.includes(x.action)).map((x) => `${x.name}:${x.action}`).join(','))
+    // A tool may declare several verbs (`acm_remember` switches on the scope), so the
+    // question is about the list, not about a single field.
+    ok('every other tool declares a verb',
+      TOOLS.filter((x) => !BY_DESIGN_UNVERBED.includes(x.name)).every((x) => toolVerbs(x).length > 0 && toolVerbs(x).every((v) => ACTIONS.includes(v))),
+      TOOLS.filter((x) => !BY_DESIGN_UNVERBED.includes(x.name) && !toolVerbs(x).every((v) => ACTIONS.includes(v))).map((x) => `${x.name}:${toolVerbs(x).join('|') || 'none'}`).join(','))
+    ok('no tool declares a verb that is not an action',
+      TOOLS.every((x) => toolVerbs(x).every((v) => ACTIONS.includes(v))),
+      TOOLS.filter((x) => !toolVerbs(x).every((v) => ACTIONS.includes(v))).map((x) => `${x.name}:${toolVerbs(x).join('|')}`).join(','))
     ok('the tool list matches capabilities', JSON.stringify([...names].sort()) === JSON.stringify([...(caps?.tools?.visible ?? [])].sort()), `${names.length} vs ${caps?.tools?.visible?.length}`)
   }
 

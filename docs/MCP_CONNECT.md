@@ -139,7 +139,7 @@ node scripts/mcp-scoped-flow.mjs --fresh --db /tmp/acm-scoped-flow.sqlite
 | `reviewer` | `memory:read`, `task:verify`, `task:reject` |
 | `intruder` | none |
 
-The transcript (37 checks) is the evidence, not the table:
+The transcript (39 checks) is the evidence, not the table:
 
 ```
 ok   planner sees the tool its grant names - 11 tools
@@ -148,14 +148,16 @@ ok   a principal without mailbox:claim cannot take it - not authorized: mailbox:
 ok   worker discovers the task by listing, and uses the key it read - T-mwlh0mm6-aitx
 ok   worker does the work through the tool surface - memory id 2
 ok   the work reads back from the store - digest af99d7053cbfcae9
-ok   reviewer finds the work by its own search - memory #2
+ok   the return states a claim the reviewer can re-derive - recorded sf-lx8k2 as memory #2, digest ...
+ok   the evidence cites the row and digest the result names - memory:2#af99d7053cbfcae9 note:acm_remember then acm_search, one worker session
+ok   reviewer finds the row by the token in the return - memory #2
 ok   the digest the reviewer computes matches the one returned - af99d7053cbfcae9
 ok   a token nobody wrote appears in no row, so the hit above is not vacuous - 2 loose hits, 0 exact
 ok   worker holds task:verify and still cannot verify its own work - self-verification-refused
 ok   the verifier is recorded as the reviewer - reviewer
 ok   no grants means one tool, the one that explains why - acm_capabilities
 ok   a new session reads the whole trail - assigned -> running -> returned -> verified
-scoped flow: 37 checks, 0 failed
+scoped flow: 39 checks, 0 failed
 ```
 
 Four details are deliberate.
@@ -167,10 +169,13 @@ Four details are deliberate.
 - **The work is real.** The worker writes a session memory through `acm_remember`, reads
   it back, and returns its id and digest. Nothing in the evidence is a command that was
   not run.
-- **The reviewer re-reads.** It searches again with `scope: 'all'` (cross-session),
-  recomputes the digest from the row that came back, and only then verifies - with that
-  digest in the note. A control query for a token nobody wrote confirms the positive hit
-  is not a retriever that returns everything.
+- **The reviewer re-reads, from the record.** It parses the token, the row id and the
+  claimed digest out of the persisted `result`, checks that the `memory:` evidence row
+  names the same pair, searches with `scope: 'all'` (cross-session), and recomputes the
+  digest from the row that came back. It is given a task key, not the answer - an earlier
+  version compared against values the driver held in memory, which proved the driver could
+  agree with itself. A control query for a token nobody wrote confirms the
+  positive hit is not a retriever that returns everything.
 - **`worker` holds `task:verify` on purpose**, so the refusal it gets on its own return
   is `self-verification-refused` - about who it is, not about what it was allowed.
 

@@ -277,13 +277,15 @@ try {
     work.workerDigest = row ? digest(row.text) : null
     check('the work reads back from the store', Boolean(row), row ? `digest ${work.workerDigest}` : `${(back.value?.items ?? []).length} hits`)
 
+    // `memory:` evidence, not a note about what was done: a successor has to be
+    // able to open the row, and only a reference it can resolve makes that possible.
     const ret = await s.call('acm_task_return', {
       key,
       result: `recorded ${work.token} as memory #${work.workerMemoryId}, digest ${work.workerDigest}`,
-      evidence: `note:mcp acm_remember id=${work.workerMemoryId} scope=session\nnote:mcp acm_search "${work.token}" digest=${work.workerDigest}`,
+      evidence: `memory:${work.workerMemoryId}#${work.workerDigest}\nnote:acm_remember then acm_search, one worker session`,
     })
     check('worker returns it with evidence', ret.value?.task?.state === 'returned', ret.value?.reason ?? '')
-    check('the return carries both evidence rows', (ret.value?.task?.evidence ?? []).length === 2, `${(ret.value?.task?.evidence ?? []).length} rows`)
+    check('the return cites the memory it wrote', (ret.value?.task?.evidence ?? []).filter((e) => e.kind === 'memory').length === 1, `${(ret.value?.task?.evidence ?? []).length} rows`)
 
     const selfVerify = await s.call('acm_task_verify', { key })
     check('worker holds task:verify and still cannot verify its own work', selfVerify.value?.reason === 'self-verification-refused', selfVerify.value?.reason ?? '')
@@ -304,20 +306,33 @@ try {
     const before = await s.call('acm_task_get', { key: work.discoveredKey })
     check('reviewer reads the returned task', before.value?.task?.state === 'returned', before.value?.task?.state ?? before.value?.reason ?? '')
 
-    // Re-read rather than take the return note's word for it: `scope: 'all'` reaches the
-    // worker's session, and the digest is recomputed from what came back.
-    const recheck = await s.call('acm_search', { query: work.token, scope: 'all' })
-    const row = (recheck.value?.items ?? []).find((i) => i.id === work.workerMemoryId)
-    check('reviewer finds the work by its own search', Boolean(row), row ? `memory #${row.id}` : `${(recheck.value?.items ?? []).length} hits`)
-    check('the digest the reviewer computes matches the one returned', row ? digest(row.text) === work.workerDigest : false, row ? digest(row.text) : '-')
+    // Everything from here is derived from the persisted return. The earlier version
+    // of this block compared against `work.*`, values the driver already held, so it
+    // proved the driver could agree with itself. The reviewer is given a
+    // key; whatever it checks has to be in the record.
+    const outcome = String(before.value?.task?.result ?? '')
+    const claim = outcome.match(/recorded (\S+) as memory #(\d+), digest ([0-9a-f]{16})/)
+    check('the return states a claim the reviewer can re-derive', Boolean(claim), outcome.slice(0, 70))
+    const [, token, idText, claimed] = claim ?? []
+    const memId = Number(idText)
+    check('the evidence cites the row and digest the result names',
+      (before.value?.task?.evidence ?? []).some((e) => e.kind === 'memory' && e.ref === `${memId}#${claimed}`),
+      (before.value?.task?.evidence ?? []).map((e) => `${e.kind}:${e.ref}`).join(' '))
+
+    // `scope: 'all'` reaches the worker's session; the digest is recomputed from the
+    // row that came back, not compared with anything this driver passed in.
+    const recheck = await s.call('acm_search', { query: token, scope: 'all' })
+    const row = (recheck.value?.items ?? []).find((i) => i.id === memId)
+    check('reviewer finds the row by the token in the return', Boolean(row), row ? `memory #${row.id}` : `${(recheck.value?.items ?? []).length} hits`)
+    check('the digest the reviewer computes matches the claim', row ? digest(row.text) === claimed : false, row ? digest(row.text) : '-')
 
     // The retriever is lexical, so a query that shares a prefix still returns loose hits.
     // What must be true is narrower and checkable: no row contains the token nobody wrote.
-    const control = await s.call('acm_search', { query: `${work.token}-never-written`, scope: 'all' })
-    const claims = (control.value?.items ?? []).filter((i) => String(i.text ?? '').includes(`${work.token}-never-written`))
+    const control = await s.call('acm_search', { query: `${token}-never-written`, scope: 'all' })
+    const claims = (control.value?.items ?? []).filter((i) => String(i.text ?? '').includes(`${token}-never-written`))
     check('a token nobody wrote appears in no row, so the hit above is not vacuous', claims.length === 0, `${(control.value?.items ?? []).length} loose hits, 0 exact`)
 
-    const verify = await s.call('acm_task_verify', { key: work.discoveredKey, note: `re-read memory #${work.workerMemoryId}, digest ${work.workerDigest}` })
+    const verify = await s.call('acm_task_verify', { key: work.discoveredKey, note: `re-read memory #${memId}, digest ${claimed}` })
     check('reviewer verifies', verify.value?.task?.state === 'verified', verify.value?.reason ?? '')
     check('the verifier is recorded as the reviewer', verify.value?.task?.verifiedBy === 'reviewer', verify.value?.task?.verifiedBy ?? '-')
 

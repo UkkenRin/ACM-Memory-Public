@@ -36,6 +36,7 @@
  * Exit codes: 0 every step passed, 1 a step failed, 2 usage or configuration error.
  */
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -115,6 +116,53 @@ class Agent extends McpAgent {
   }
 }
 
+const digest = (v) => createHash('sha256').update(JSON.stringify(v ?? null)).digest('hex').slice(0, 16)
+const repoRoot = join(here, '..')
+
+/**
+ * What a reviewer can actually check about a return.
+ *
+ * The first version of this script handed the reviewer a `commit:9f2c1ab` that is
+ * not in this repository and a `file:docs/deploy-policy.md` that does not exist, and
+ * the run still ended at `verified` - because nothing re-read the claims, and the
+ * state machine only requires the evidence to be well formed. This walks
+ * the rows the worker wrote and reports what does not hold: a file reference is
+ * checked against the working tree, a memory reference against the store and a
+ * recomputed digest. It is deliberately *not* a general command runner: `command:`
+ * rows are reported as unverifiable rather than executed, because executing whatever
+ * a peer wrote down is how the next incident starts.
+ */
+async function auditReturn(viewer, key) {
+  const got = await viewer.tool('acm_task_get', { key })
+  const task = got.value?.task
+  const problems = []
+  const unverifiable = []
+  if (!task) return { problems: ['task not readable'], unverifiable }
+  const text = String(task.result ?? '')
+  const m = text.match(/recorded (\S+) as memory #(\d+), digest ([0-9a-f]{16})/)
+  if (!m) problems.push('the result does not say what was recorded')
+
+  const cited = (task.evidence ?? []).filter((e) => e.kind === 'memory')
+  for (const e of task.evidence ?? []) {
+    if (e.kind === 'file') {
+      const rel = String(e.ref).split('#')[0]
+      if (!existsSync(join(repoRoot, rel))) problems.push(`file not found: ${rel}`)
+    }
+    if (e.kind === 'command') unverifiable.push(String(e.ref).slice(0, 60))
+  }
+
+  if (m) {
+    const [, token, idText, claimed] = m
+    const id = Number(idText)
+    if (!cited.some((e) => e.ref === `${id}#${claimed}`)) problems.push('evidence and result disagree')
+    const found = await viewer.tool('acm_search', { query: token, scope: 'all' })
+    const row = (found.value?.items ?? []).find((i) => i.id === id)
+    if (!row) problems.push(`memory #${id} is not in the store`)
+    else if (digest(row.text) !== claimed) problems.push(`digest mismatch for #${id}`)
+  }
+  return { problems, unverifiable }
+}
+
 // ── Transcript and assertions
 const steps = []
 function record(name, ok, detail) {
@@ -142,7 +190,7 @@ say(`two-agent loop on ${dbPath}`)
   // role see its own project's work.
   const identities = [
     ['planner', 'alpha', ['memory:read', 'task:create', 'task:assign', 'task:retry', 'task:cancel']],
-    ['worker', 'alpha', ['memory:read', 'task:accept', 'task:renew', 'task:return']],
+    ['worker', 'alpha', ['memory:read', 'memory:write-session', 'task:accept', 'task:renew', 'task:return']],
     ['reviewer', 'alpha', ['memory:read', 'task:verify', 'task:reject']],
     ['reviewer-beta', 'beta', ['memory:read', 'task:verify']],
   ]
@@ -210,11 +258,26 @@ try {
     renewed.ok === true && Number(renewed.value?.task?.leaseUntil) > Number(accepted.value?.task?.leaseUntil),
     `lease until ${renewed.value?.task?.leaseUntil ?? '?'}`)
 
-  // ── 4. The worker returns a result with evidence
+  // ── 4. The worker does the work and returns a claim that can be re-checked
+  //
+  // The evidence here is real in the sense that matters: the file exists in this
+  // repository, the test exists, and the memory row is in the store. The digest is
+  // deliberately one hex digit off, so the reviewer has something to find.
+  const token = `loop-${Date.now().toString(36)}`
+  const wrote = await worker.tool('acm_remember', {
+    text: `${token} the deploy window is Wednesday 03:00 UTC`, scope: 'session', kind: 'fact',
+  })
+  const memId = wrote.value?.id
+  record('worker records the finding as a memory', Number.isInteger(memId), `id ${memId ?? wrote.error}`)
+  const readBack = await worker.tool('acm_search', { query: token })
+  const own = (readBack.value?.items ?? []).find((i) => i.id === memId)
+  const realDigest = own ? digest(own.text) : '0000000000000000'
+  const wrongDigest = `${realDigest.slice(0, 15)}${realDigest[15] === '0' ? '1' : '0'}`
+
   const firstReturn = await worker.tool('acm_task_return', {
     key,
-    result: 'the deploy window is Wednesday 03:00 UTC, per paragraph 4',
-    evidence: 'commit:9f2c1ab\nfile:docs/deploy-policy.md#paragraph-4\ntest:node test/tasks.mjs',
+    result: `recorded ${token} as memory #${memId}, digest ${wrongDigest}`,
+    evidence: `memory:${memId}#${wrongDigest}\nfile:test/tasks.mjs\ntest:node test/tasks.mjs`,
   })
   record('worker returns a result with three pieces of evidence',
     firstReturn.ok === true && firstReturn.value?.task?.state === 'returned' &&
@@ -250,16 +313,22 @@ try {
       `state ${after.value?.task?.state ?? '?'}, events ${before.value?.events?.length ?? '?'} -> ${after.value?.events?.length ?? '?'}`)
   }
 
-  // ── 6. The reviewer rejects the first attempt, with a reason the worker can act on
+  // ── 6. The reviewer reads the return and rejects it, on what it found
+  const firstAudit = await auditReturn(reviewer, key)
+  record('the reviewer finds the claimed digest does not match the row it names',
+    firstAudit.problems.some((x) => x.includes('digest')), firstAudit.problems.join('; ') || 'no problems')
+  record('and says which claims it could not check at all',
+    firstAudit.unverifiable.length === 0, firstAudit.unverifiable.join('; ') || 'none')
+
   const rejected = await reviewer.tool('acm_task_reject', {
-    key, reason: 'the evidence does not show the paragraph number was checked against the source',
+    key, reason: `evidence check failed: ${firstAudit.problems.join('; ')}`,
   })
   record('reviewer rejects the return and the task goes back to assigned',
     rejected.ok === true && rejected.value?.task?.state === 'assigned' &&
-    String(rejected.value?.task?.lastReason ?? '').includes('paragraph number'),
+    /digest/i.test(String(rejected.value?.task?.lastReason ?? '')),
     `[${rejected.value?.task?.state ?? '?'}] attempt ${rejected.value?.task?.attempts ?? '?'}`)
   record('the rejected result is kept for the next attempt',
-    String(firstReturn.ok ? rejected.value?.task?.result ?? '' : '').includes('Wednesday'))
+    String(firstReturn.ok ? rejected.value?.task?.result ?? '' : '').includes(token))
 
   // ── 7. The worker takes it again and answers the objection
   const secondAccept = await worker.tool('acm_task_accept', { key, leaseMs })
@@ -268,15 +337,18 @@ try {
     `attempt ${secondAccept.value?.task?.attempts ?? '?'}`)
   const secondReturn = await worker.tool('acm_task_return', {
     key,
-    result: 'the deploy window is Wednesday 03:00 UTC; paragraph 4 of docs/deploy-policy.md says so',
-    evidence: 'commit:9f2c1ab\nfile:docs/deploy-policy.md#paragraph-4\ntest:node test/tasks.mjs\nnote:cross-checked paragraph 4 against the source table',
+    result: `recorded ${token} as memory #${memId}, digest ${realDigest}`,
+    evidence: `memory:${memId}#${realDigest}\nfile:test/tasks.mjs\ntest:node test/tasks.mjs\nnote:recomputed after the reviewer rejected the first digest`,
   })
   record('worker returns again with the objection addressed',
     secondReturn.ok === true && secondReturn.value?.task?.evidence?.length === 4,
     `${secondReturn.value?.task?.evidence?.length ?? 0} evidence items`)
 
-  // ── 8. The reviewer verifies
-  const verified = await reviewer.tool('acm_task_verify', { key, note: 'paragraph 4 checked against the source table' })
+  // ── 8. The reviewer re-runs the same check, then verifies
+  const secondAudit = await auditReturn(reviewer, key)
+  record('the second return survives the same check',
+    secondAudit.problems.length === 0, secondAudit.problems.join('; ') || 'nothing outstanding')
+  const verified = await reviewer.tool('acm_task_verify', { key, note: `re-read memory #${memId}, digest ${realDigest}` })
   record('reviewer verifies it and the task is closed',
     verified.ok === true && verified.value?.task?.state === 'verified' &&
     verified.value?.task?.verifiedBy === 'reviewer',
