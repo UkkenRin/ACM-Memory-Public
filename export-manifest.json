@@ -1,7 +1,7 @@
 {
-  "exportId": "ba0e1a1e51b3",
+  "exportId": "00c097ecf663",
   "tool": 2,
-  "createdAt": "2026-11-18T03:34:02.838Z",
+  "createdAt": "2026-11-18T03:46:36.257Z",
   "note": "Public manifest. It carries file hashes and an export id only: the private source commit is recorded on the private side, deliberately.",
   "files": {
     ".gitattributes": "07b93b4f86f8746c5cb71f13eb50ad0a6c7bdd3a7fbe42c9047fda8db3beace5",
@@ -104,7 +104,7 @@
     "test/backup.mjs": "f88748ca69cdfc274abd7e7e082829bfc7d11ed0e28c4e19bf35c46392acf282",
     "test/capabilities.mjs": "5b93c76757593edf9abbfce4d895d3aaaf45cdffe0b6a36ad0ff3e2036902884",
     "test/check-secrets.mjs": "c4ca9b87138f2a7cb3e5e3f1bf9c2797ae378c9839c00b4c87a524c5407e426f",
-    "test/checkpoint-race.mjs": "8b5b607148f834504b469c6be16fba1894b1125aba757f6162933451d9a365a1",
+    "test/checkpoint-race.mjs": "a2b6efdcf560d3decc15d405c317672b87979815ca8bf09d5616bd90e1e9b67c",
     "test/cross-platform.mjs": "a7139c294fec84b2a971de98117c034c1868e63fb0ed49941fee93a04b6132b6",
     "test/cross-session.mjs": "bcf0755a6313b1bc725a1c281653cbbd49371a55d61b5be9ea220f94cf7a0381",
     "test/db-race.mjs": "4c3b74e7681a385fb95af5763998874567ad7a9781946e5edaf0c4aa8e893a97",

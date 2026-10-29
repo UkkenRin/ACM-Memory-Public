@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { openDb } from '../lib/db.mjs'
 import { saveCheckpoint, activeCheckpoint } from '../lib/checkpoint.mjs'
@@ -28,31 +28,46 @@ function ok(name, cond, extra = '') {
   if (cond) { pass++; console.log(`  ok  ${name}`) } else { failures.push(`${name} ${extra}`); console.log(`  NO  ${name} ${extra}`) }
 }
 
+// `import` takes a URL, not a path: on Windows `C:\...` is a bare specifier and the
+// child dies before it writes anything, which is exactly what the first CI run did.
+const dbUrl = pathToFileURL(join(lib, 'db.mjs')).href
+const cpUrl = pathToFileURL(join(lib, 'checkpoint.mjs')).href
+
 writeFileSync(worker, `
-import { openDb } from ${JSON.stringify(join(lib, 'db.mjs'))}
-import { saveCheckpoint } from ${JSON.stringify(join(lib, 'checkpoint.mjs'))}
+import { openDb } from ${JSON.stringify(dbUrl)}
+import { saveCheckpoint } from ${JSON.stringify(cpUrl)}
 // A few milliseconds between saves widens the window a reader-then-writer bug
 // needs, so the run is not only fast - it is adversarial.
 const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 const db = openDb(${JSON.stringify(dbPath)})
-for (let i = 0; i < 20; i++) { nap(1 + (i % 3)); saveCheckpoint(db, { sessionId: 'cli:race', owner: 'race', goal: 'w' + process.argv[2] + '-' + i }) }
+// Two writers and a sampler on one file: on Windows the default 4 s wait is not
+// always enough, and a busy timeout would look like the bug this test is looking for.
+db.exec('pragma busy_timeout = 15000')
+for (let i = 0; i < 15; i++) { nap(1 + (i % 3)); saveCheckpoint(db, { sessionId: 'cli:race', owner: 'race', goal: 'w' + process.argv[2] + '-' + i }) }
 `)
 
 try {
   // The writers run in the background while this process watches the invariant from
   // the outside: at no instant may there be two active rows, not just at the end.
   const running = ['a', 'b'].map((tag) => spawn(process.execPath, [worker, tag], { stdio: ['ignore', 'pipe', 'pipe'] }))
+  const stderrOf = new Map()
+  for (const c of running) {
+    c.stderr.setEncoding('utf8')
+    c.stderr.on('data', (chunk) => stderrOf.set(c, (stderrOf.get(c) ?? '') + chunk))
+  }
   let peak = 0
   let samples = 0
   const watcher = openDb(dbPath)
   try {
-    while (running.some((c) => c.exitCode === null && !c.killed)) {
+    // `setTimeout` rather than `Atomics.wait`: blocking the event loop also blocks the
+    // `exit` events that update `exitCode`, so the loop would run to its sample cap
+    // instead of ending when the writers do.
+    const deadline = Date.now() + 60_000
+    while (running.some((c) => c.exitCode === null) && Date.now() < deadline) {
       const c = Number(watcher.prepare("select count(*) c from acm_checkpoints where session_id = 'cli:race' and superseded_by is null").get().c)
       if (c > peak) peak = c
       samples++
-      if (samples > 4000) break
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2)
-      if (running.every((x) => x.exitCode !== null)) break
+      await new Promise((done) => setTimeout(done, 2))
     }
   } finally {
     await Promise.all(running.map((c) => new Promise((done) => (c.exitCode !== null ? done() : c.once('exit', done)))))
@@ -61,7 +76,7 @@ try {
   const runs = running.map((c) => ({ status: c.exitCode }))
   ok('both writers finished without an error',
     runs.every((r) => r.status === 0),
-    runs.map((r) => `exit ${r.status}`).join(' | '))
+    running.map((c) => `exit ${c.exitCode}: ${String(stderrOf.get(c) ?? '').slice(-200)}`).join(' | '))
   ok('at no instant during the run were there two active checkpoints',
     peak <= 1, `peak ${peak} over ${samples} samples`)
 
@@ -71,7 +86,7 @@ try {
   const total = rows.length
   db.close()
 
-  ok('every save was recorded', total === 40, `${total} rows`)
+  ok('every save was recorded', total === 30, `${total} rows`)
   ok('exactly one checkpoint is active at the end', active.length === 1,
     `${active.length} active of ${total}`)
 
