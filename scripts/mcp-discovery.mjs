@@ -47,6 +47,7 @@ import { createHash } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { openDb } from '../lib/db.mjs'
 import { ACTIONS, grant, principalFromConfig } from '../lib/auth.mjs'
@@ -54,7 +55,10 @@ import { mergeConfig } from '../lib/core.mjs'
 import { McpAgent } from './mcp-agent.mjs'
 import { storeRefusal } from './store-guard.mjs'
 
-const mcpPath = new URL('../lib/host/mcp.mjs', import.meta.url).pathname
+// `fileURLToPath`, not `.pathname`: on Windows the latter yields `/D:/...`, and a child
+// process spawned with that path dies before its first RPC. The two-agent driver used
+// `join()` from the start and never had the bug, which is why only the new test saw it.
+const mcpPath = fileURLToPath(new URL('../lib/host/mcp.mjs', import.meta.url))
 
 const argv = process.argv.slice(2)
 const arg = (name, fallback = null) => {
