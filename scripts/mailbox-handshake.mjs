@@ -115,14 +115,21 @@ const must = (result, what) => {
 /** What a real reader would check: the number it sent and the id it sent it under.
  *  Two separate claims, so a body can carry the right number under the wrong id and
  *  be caught for the right reason. */
-function ackMatches(body, { number, originalId }) {
-  const text = String(body ?? '')
+function ackMatches(message, { number, originalId }) {
+  const text = String(message?.body ?? '')
   const numbers = text.match(/probe:[0-9a-f]{6}/g) ?? []
   const ids = text.match(/#(\d+)/g) ?? []
   const sameNumber = numbers.length === 1 && numbers[0] === number
-  const sameId = ids.some((id) => Number(id.slice(1)) === originalId)
-  const why = sameNumber && sameId ? 'matched' : !sameNumber && !sameId ? 'both-wrong' : !sameNumber ? 'wrong-number' : 'wrong-id'
-  return { sameNumber, sameId, ok: sameNumber && sameId, why, numbers, ids }
+  // The parent is a field on the row. The number in the prose is what a person
+  // reads. Both have to agree with what was sent, and with each other: a row whose
+  // field says #1 while its text says #1001 is a broken acknowledgement whatever
+  // the field says, and a reader that only trusts the field would call it valid.
+  const fieldId = message?.replyTo == null ? null : Number(message.replyTo)
+  const fieldOk = fieldId === originalId
+  const proseOk = ids.some((id) => Number(id.slice(1)) === originalId)
+  const why = !sameNumber ? 'wrong-number' : !fieldOk ? 'wrong-field' : !proseOk ? 'contradictory-id' : 'matched'
+  const ok = sameNumber && fieldOk && proseOk
+  return { sameNumber, fieldOk, proseOk, ok, why, numbers, ids, fieldId }
 }
 
 async function sendSide(number) {
@@ -158,6 +165,7 @@ async function receiveSide({ id, number }) {
       to: SENDER,
       body: `ack for #${found.id} ${wrongNumber}`,
       kind: 'notice',
+      replyTo: found.id,
     }), 'send near-miss ack')
 
     // Second stage: the right number under an id nobody sent. A reader that only
@@ -166,12 +174,30 @@ async function receiveSide({ id, number }) {
       to: SENDER,
       body: `ack for #${found.id + 1000} ${number}`,
       kind: 'notice',
+      replyTo: found.id,
     }), 'send wrong-id ack')
+
+    // Third stage: the field points at a real message that is not the probe, while
+    // the text names the probe correctly. A reader that trusted the prose is happy;
+    // a reader that trusts the field alone is happy too - only one that compares
+    // the field to what it actually sent refuses this.
+    const stray = must(await side.tool('acm_send', {
+      to: SENDER,
+      body: `unrelated note ${number}-noise`,
+      kind: 'notice',
+    }), 'send stray message')
+    const wrongField = must(await side.tool('acm_send', {
+      to: SENDER,
+      body: `ack for #${found.id} ${number}`,
+      kind: 'notice',
+      replyTo: Number(stray.id),
+    }), 'send wrong-field ack')
 
     const rightAck = must(await side.tool('acm_send', {
       to: SENDER,
       body: `ack for #${found.id} ${number}`,
       kind: 'notice',
+      replyTo: found.id,
     }), 'send ack')
 
     const done = must(await side.tool('acm_complete', { id: found.id }), 'complete probe')
@@ -182,6 +208,7 @@ async function receiveSide({ id, number }) {
       staged: [
         { kind: 'near-miss', id: Number(wrongAck.id), number: wrongNumber },
         { kind: 'wrong-id', id: Number(wrongId.id), number },
+        { kind: 'wrong-field', id: Number(wrongField.id), number },
         { kind: 'exact', id: Number(rightAck.id), number },
       ],
     }
@@ -196,7 +223,7 @@ async function readBack({ id, number, staged }) {
     await side.start()
     const inbox = must(await side.tool('acm_inbox', {}), 'sender inbox')
     const acks = (inbox.items ?? []).filter((m) => String(m.body ?? '').startsWith('ack for #'))
-    const judged = acks.map((m) => ({ id: m.id, body: m.body, ...ackMatches(m.body, { number, originalId: id }) }))
+    const judged = acks.map((m) => ({ id: m.id, body: m.body, ...ackMatches(m, { number, originalId: id }) }))
     const accepted = judged.filter((a) => a.ok)
     const refused = judged.filter((a) => !a.ok)
 
@@ -228,12 +255,14 @@ async function main() {
   step('the receiver claims it before answering', got.claimed === true, String(got.claimed))
 
   const back = await readBack({ id: sent.id, number, staged: got.staged })
-  step('all three acks arrive, so the negative controls are not vacuous', back.saw === 3, `${back.saw} ack(s)`)
+  step('all four acknowledgements arrive, so the controls are not vacuous', back.saw === 4, `${back.saw} ack(s)`)
   step('the ack carrying a different number is refused for that reason',
     back.refused.some((r) => r.why === 'wrong-number'), JSON.stringify(back.refused))
-  step('the ack carrying the right number under another id is refused for that reason',
-    back.refused.some((r) => r.why === 'wrong-id'), JSON.stringify(back.refused))
-  step('only one of the three is accepted', back.accepted.length === 1, JSON.stringify(back.accepted))
+  step('an ack whose text names another id than its own field is refused as contradictory',
+    back.refused.some((r) => r.why === 'contradictory-id'), JSON.stringify(back.refused))
+  step('an ack whose reply field points at another message is refused as the wrong parent',
+    back.refused.some((r) => r.why === 'wrong-field'), JSON.stringify(back.refused))
+  step('only one of the four is accepted', back.accepted.length === 1, JSON.stringify(back.accepted))
 
   // The two ends have to agree on the same message, not merely each report success.
   const agreed = back.accepted.length === 1 && got.staged.some((s) => s.kind === 'exact' && back.accepted[0] === s.id)

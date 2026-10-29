@@ -265,7 +265,7 @@ try {
     db = openDb(p)
     try {
       const before = db.prepare('select max(version) v from acm_schema_migrations').get().v
-      assert.equal(Number(before), 19, 'fixture should already be current after open')
+      assert.equal(Number(before), 20, 'fixture should already be current after open')
       db.exec('delete from acm_schema_migrations where version > 8')
       let threw = null
       try {

@@ -89,6 +89,41 @@ try {
     assert.equal(rows.find((m) => m.id === orphan.id).decisionExists, false)
   })
 
+  t('a reply records which message it answers, as a field', () => {
+    const question = sendMessage(db, { to: 'reviewer', from: 'lead', body: 'which window?' })
+    const answer = sendMessage(db, { to: 'lead', from: 'reviewer', body: 'sunday', replyTo: question.id })
+    assert.equal(answer.ok, true)
+    const row = inbox(db, { agent: 'lead' }).find((m) => m.id === answer.id)
+    assert.equal(row.replyTo, question.id)
+    // The message it answers does not have to be a reply itself.
+    const original = inbox(db, { agent: 'reviewer' }).find((m) => m.id === question.id)
+    assert.equal(original.replyTo, null)
+  })
+
+  t('a reply to a message that is not there is refused, not stored dangling', () => {
+    const before = inbox(db, { agent: 'lead' }).length
+    const r = sendMessage(db, { to: 'lead', from: 'reviewer', body: 'answer to nothing', replyTo: 999999 })
+    assert.equal(r.ok, false)
+    assert.equal(r.reason, 'reply-to-not-found')
+    assert.equal(inbox(db, { agent: 'lead' }).length, before, 'a refused reply still wrote a row')
+    assert.equal(sendMessage(db, { to: 'lead', from: 'reviewer', body: 'x', replyTo: 'one' }).reason, 'bad-reply-to')
+    assert.equal(sendMessage(db, { to: 'lead', from: 'reviewer', body: 'x', replyTo: 0 }).reason, 'bad-reply-to')
+  })
+
+  t('a reply cannot point into another partition', () => {
+    const alices = sendMessage(db, { to: 'reviewer', from: 'lead', body: 'alice question', owner: 'alice' })
+    const cross = sendMessage(db, { to: 'lead', from: 'reviewer', body: 'bob answering alice', owner: 'bob', replyTo: alices.id })
+    assert.equal(cross.ok, false)
+    assert.equal(cross.reason, 'reply-to-not-found')
+  })
+
+  t('the idempotency key covers the parent, so a retry that changed it conflicts', () => {
+    const one = sendMessage(db, { to: 'reviewer', from: 'lead', body: 'retry me', messageKey: 'mk-1' })
+    const same = sendMessage(db, { to: 'reviewer', from: 'lead', body: 'retry me', messageKey: 'mk-1', replyTo: one.id })
+    assert.equal(same.ok, false, 'a retry that added a parent was treated as the same message')
+    assert.equal(same.reason, 'message-key-conflict')
+  })
+
   console.log(`\nmailbox: ${pass} passed`)
 } finally {
   try { db.close() } catch {}
