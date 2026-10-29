@@ -75,11 +75,18 @@ const strip = (pkg) => {
   return sortKeys(copy)
 }
 
-const manifest = JSON.parse(readFileSync(`${root}public-manifest.json`, 'utf8'))
-const internalGlobs = new Set(manifest.internalOnly.map((r) => r.glob))
-
 /** The mirror ships the public variant; the development tree ships both. */
 const inMirror = a.scripts['test:history'] === undefined
+
+/**
+ * `public-manifest.json` classifies the *private* tree and is never exported, so it is
+ * read in the private branch only. Reading it unconditionally made the mirror die on
+ * ENOENT - `path: .../public-manifest.json` - before a single assertion ran, which is
+ * `PUB-07`: the private suite passed because the file is always there, and the first
+ * six-leg run in the public mirror turned every Ubuntu and macOS leg red in four minutes.
+ */
+const manifest = inMirror ? null : JSON.parse(readFileSync(`${root}public-manifest.json`, 'utf8'))
+const internalGlobs = new Set((manifest?.internalOnly ?? []).map((r) => r.glob))
 
 if (inMirror) {
   ok('the mirror does not advertise the private history command',
