@@ -1,7 +1,7 @@
 {
-  "exportId": "9f4215e1cfbb",
+  "exportId": "290cbbd8fcb4",
   "tool": 2,
-  "createdAt": "2026-11-17T10:33:32.253Z",
+  "createdAt": "2026-11-17T11:45:55.576Z",
   "note": "Public manifest. It carries file hashes and an export id only: the private source commit is recorded on the private side, deliberately.",
   "files": {
     ".gitattributes": "07b93b4f86f8746c5cb71f13eb50ad0a6c7bdd3a7fbe42c9047fda8db3beace5",
@@ -88,6 +88,7 @@
     "scripts/check-syntax.mjs": "3d0be601b96be98ee409a4cad67205fd12461e01c151fafd7d9f113f72241f7c",
     "scripts/check-third-party.mjs": "14d5ebb16639bfbc26a43dfd8b8f3aab4ba98c21f168e0ab775231b72d743c07",
     "scripts/mcp-agent.mjs": "3cc4e9d37f9d7306f44528356a9722fca5984c12272249410744b463c57d1b3e",
+    "scripts/mcp-discovery.mjs": "eef82afa28a57af5b431c87e4785c069eff76e2d49be528c477d49ed7d43739e",
     "scripts/store-guard.mjs": "d080b860a4042f6cea3f2412994fa9be49dc6ede6beda340c518de85fa28919d",
     "scripts/two-agent-loop.mjs": "f6a50f91d056b61134cf167d636ab87cbb16747e0ce42dcd2584e9f461cd5ff0",
     "scripts/verify-export.mjs": "d41b2f450a72de65d7f34526f9715b01a9988bba6be44c37137f3a7c5ad54edf",
@@ -119,6 +120,7 @@
     "test/lifecycle-faults.mjs": "1f2f71ec58e26a5f36ff6cc5750e5f028a1ec1df36c0efade88e921d863bc5b0",
     "test/load.mjs": "90c86bd81faed33d9c26aa9922663a2950bd52437979230609bd8384b737d8ca",
     "test/mailbox.mjs": "56392749f5d16e70b4c9c1d31942c8fa5dd4d963f315edcb3db31485d13fef20",
+    "test/mcp-discovery.mjs": "fdfd68ae5c0ba2b9293e661f7f79d444e128168294bf62d6c13e2fb262cb2a4c",
     "test/memory-scope.mjs": "8c1b0941cc29ab7099da18f3b70f7a8193eb0374500dbbe4354e7a0fa6aa900a",
     "test/message-idempotency-crash.mjs": "f4cccda6e4db765f29aded4d8eaf333e24abefaaa4fefa8936977ca06f01829e",
     "test/message-idempotency-race.mjs": "4c73b5981b8185e0598490f684c4a0a7ea6704e1be5f8a8e68e80c41cb303432",
