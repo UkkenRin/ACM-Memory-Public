@@ -135,34 +135,49 @@ node scripts/mcp-scoped-flow.mjs --fresh --db /tmp/acm-scoped-flow.sqlite
 | principal | verbs it holds |
 |---|---|
 | `planner` | `memory:read`, `memory:write-global`, `mailbox:send`, `task:create`, `task:assign` |
-| `worker` | `memory:read`, `mailbox:claim`, `mailbox:complete`, `task:accept`, `task:renew`, `task:return`, `task:verify` |
+| `worker` | `memory:read`, `memory:write-session`, `mailbox:claim`, `mailbox:complete`, `task:accept`, `task:renew`, `task:return`, `task:verify` |
 | `reviewer` | `memory:read`, `task:verify`, `task:reject` |
 | `intruder` | none |
 
-The transcript (31 checks) is the evidence, not the table:
+The transcript (37 checks) is the evidence, not the table:
 
 ```
 ok   planner sees the tool its grant names - 11 tools
 ok   planner does not see a verb it does not hold
 ok   a principal without mailbox:claim cannot take it - not authorized: mailbox:claim (no-grant)
-ok   worker discovers the task from the store - 1 listed
+ok   worker discovers the task by listing, and uses the key it read - T-mwlh0mm6-aitx
+ok   worker does the work through the tool surface - memory id 2
+ok   the work reads back from the store - digest af99d7053cbfcae9
+ok   reviewer finds the work by its own search - memory #2
+ok   the digest the reviewer computes matches the one returned - af99d7053cbfcae9
+ok   a token nobody wrote appears in no row, so the hit above is not vacuous - 2 loose hits, 0 exact
 ok   worker holds task:verify and still cannot verify its own work - self-verification-refused
-ok   reviewer verifies
 ok   the verifier is recorded as the reviewer - reviewer
 ok   no grants means one tool, the one that explains why - acm_capabilities
 ok   a new session reads the whole trail - assigned -> running -> returned -> verified
-scoped flow: 31 checks, 0 failed
+scoped flow: 37 checks, 0 failed
 ```
 
-Two details are deliberate. `worker` holds `task:verify`, so the refusal it gets on its own
-return is `self-verification-refused` - about who it is, not about what it was allowed. And
-the task key is read back from `acm_task_list` rather than passed in, so the worker has to
-find its work the way an agent would.
+Four details are deliberate.
+
+- **The key is used, not compared.** The worker picks the task out of `acm_task_list` by
+  assignee and state, and every later call uses that `found.key`. An earlier version
+  checked that the list contained a key the script already held and then used its own
+  copy - which proved the list was correct, not that anyone read it.
+- **The work is real.** The worker writes a session memory through `acm_remember`, reads
+  it back, and returns its id and digest. Nothing in the evidence is a command that was
+  not run.
+- **The reviewer re-reads.** It searches again with `scope: 'all'` (cross-session),
+  recomputes the digest from the row that came back, and only then verifies - with that
+  digest in the note. A control query for a token nobody wrote confirms the positive hit
+  is not a retriever that returns everything.
+- **`worker` holds `task:verify` on purpose**, so the refusal it gets on its own return
+  is `self-verification-refused` - about who it is, not about what it was allowed.
 
 Grants are seeded through `lib/auth.mjs`, which is setup, not evidence: every assertion
 after that comes from a JSON-RPC answer over the pipe. To check that the negatives are real,
 comment out the `mode === 'local'` branch in `authorize()` and rerun - five checks go red,
-including the two that name a verb in the refusal.
+including the two that name a verb in the refusal. That is the only reason to trust the `ok` lines above it.
 
 ## 6. What this page does not cover
 

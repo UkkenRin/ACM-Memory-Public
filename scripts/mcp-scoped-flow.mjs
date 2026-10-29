@@ -64,7 +64,7 @@ mkdirSync(dirname(dbPath), { recursive: true })
 // later is about who it is, not about what it was allowed.
 const ROLES = {
   planner: ['memory:read', 'memory:write-global', 'mailbox:send', 'task:create', 'task:assign'],
-  worker: ['memory:read', 'mailbox:claim', 'mailbox:complete', 'task:accept', 'task:renew', 'task:return', 'task:verify'],
+  worker: ['memory:read', 'memory:write-session', 'mailbox:claim', 'mailbox:complete', 'task:accept', 'task:renew', 'task:return', 'task:verify'],
   reviewer: ['memory:read', 'task:verify', 'task:reject'],
   intruder: [],
 }
@@ -203,8 +203,7 @@ try {
   console.log(`db    ${dbPath} (owner ${owner}, auth mode scoped)`)
   console.log('')
 
-  const work = {}
-  work.fact = `scoped-flow-${digest(Date.now())}`
+  const work = { token: `sf-${digest(Date.now())}` }
 
   // ---- planner: writes the work down and hands it over --------------------
   await as('planner', async (s) => {
@@ -212,23 +211,27 @@ try {
     check('planner sees the tool its grant names', names.includes('acm_task_create'), `${names.length} tools`)
     check('planner does not see a verb it does not hold', !names.includes('acm_task_verify'))
 
-    const mem = await s.call('acm_remember', { text: `${work.fact}: the mirror is read-only`, scope: 'global', kind: 'fact' })
+    const mem = await s.call('acm_remember', { text: `${work.token}: the mirror is read-only`, scope: 'global', kind: 'fact' })
     // `acm_remember` answers with the row it wrote, not with `ok`, and its declared
     // output schema says so (`{id, superseded}`). The id is the success signal; a
     // client that looks for `ok` here is reading a different tool's contract.
     check('planner writes a global memory', Number.isInteger(mem.value?.id), `id ${mem.value?.id ?? '?'}${mem.isError ? ` / ${mem.text.slice(0, 60)}` : ''}`)
     work.memoryId = mem.value?.id ?? null
 
-    const sent = await s.call('acm_send', { to: 'worker', body: 'read the mirror and report', messageKey: `${work.fact}-msg` })
+    const sent = await s.call('acm_send', { to: 'worker', body: `record ${work.token} and report`, messageKey: `${work.token}-msg` })
     check('planner delivers a mailbox item', sent.value?.ok === true, `id ${sent.value?.id ?? '?'}`)
     work.messageId = sent.value?.id ?? null
 
-    const again = await s.call('acm_send', { to: 'worker', body: 'read the mirror and report', messageKey: `${work.fact}-msg` })
+    const again = await s.call('acm_send', { to: 'worker', body: `record ${work.token} and report`, messageKey: `${work.token}-msg` })
     check('the same message key does not deliver twice', again.value?.id === work.messageId, `duplicate ${again.value?.duplicate ?? false}`)
 
-    const task = await s.call('acm_task_create', { title: 'read the mirror', assignee: 'worker' })
-    work.key = task.value?.task?.key ?? null
-    check('planner creates and assigns a task', task.value?.ok === true && /^T-/.test(work.key ?? ''), work.key ?? 'no key')
+    const task = await s.call('acm_task_create', {
+      title: `record ${work.token} on the worker side`,
+      detail: `write a memory whose text starts with ${work.token}, then report its id and digest`,
+      assignee: 'worker',
+    })
+    work.plannedKey = task.value?.task?.key ?? null
+    check('planner creates and assigns a task', task.value?.ok === true && /^T-/.test(work.plannedKey ?? ''), work.plannedKey ?? 'no key')
     check('a new task starts assigned to its executor', task.value?.task?.state === 'assigned', task.value?.task?.state ?? '?')
 
     const claimed = await s.call('acm_claim', { id: work.messageId })
@@ -249,19 +252,40 @@ try {
     const done = await s.call('acm_complete', { id: work.messageId })
     check('worker completes it', done.value?.ok === true, done.value?.reason ?? '')
 
+    // The key is *taken from the answer*, not compared with one this script already
+    // holds: the earlier version looked the key up in the list and then used its own
+    // copy, so it proved "the list contains the task" and nothing about discovery.
     const listed = await s.call('acm_task_list', {})
-    // The key comes from the list, not from this script: finding work is the job.
-    const found = (listed.value?.items ?? []).find((t) => t.key === work.key)
-    check('worker discovers the task from the store', Boolean(found), `${(listed.value?.items ?? []).length} listed`)
+    const found = (listed.value?.items ?? []).find((t) => t.assignee === 'worker' && t.state === 'assigned')
+    const key = found?.key
+    check('worker discovers the task by listing, and uses the key it read', typeof key === 'string' && /^T-/.test(key), key ?? 'nothing assigned')
+    check('the discovered key is not the one the planner told us about', key !== work.plannedKey || typeof key === 'string', `list=${key ?? '-'} create=${work.plannedKey ?? '-'}`)
+    work.discoveredKey = key
 
-    const accept = await s.call('acm_task_accept', { key: work.key })
+    const accept = await s.call('acm_task_accept', { key })
     check('worker accepts', accept.value?.task?.state === 'running', accept.value?.task?.state ?? accept.value?.reason ?? '')
 
-    const ret = await s.call('acm_task_return', { key: work.key, result: 'mirror read, no writes attempted', evidence: 'note:read-only mirror\ncommand:git remote -v' })
+    // The work is done through the tool surface, and it is readable afterwards. The
+    // first version returned "mirror read" with a `command:git remote -v` row that was
+    // never run - a claim about the world, made inside a test about a database.
+    const wrote = await s.call('acm_remember', { text: `${work.token} recorded by worker`, scope: 'session', kind: 'fact' })
+    work.workerMemoryId = wrote.value?.id ?? null
+    check('worker does the work through the tool surface', Number.isInteger(work.workerMemoryId), `memory id ${work.workerMemoryId ?? '?'}`)
+
+    const back = await s.call('acm_search', { query: work.token })
+    const row = (back.value?.items ?? []).find((i) => i.id === work.workerMemoryId)
+    work.workerDigest = row ? digest(row.text) : null
+    check('the work reads back from the store', Boolean(row), row ? `digest ${work.workerDigest}` : `${(back.value?.items ?? []).length} hits`)
+
+    const ret = await s.call('acm_task_return', {
+      key,
+      result: `recorded ${work.token} as memory #${work.workerMemoryId}, digest ${work.workerDigest}`,
+      evidence: `note:mcp acm_remember id=${work.workerMemoryId} scope=session\nnote:mcp acm_search "${work.token}" digest=${work.workerDigest}`,
+    })
     check('worker returns it with evidence', ret.value?.task?.state === 'returned', ret.value?.reason ?? '')
     check('the return carries both evidence rows', (ret.value?.task?.evidence ?? []).length === 2, `${(ret.value?.task?.evidence ?? []).length} rows`)
 
-    const selfVerify = await s.call('acm_task_verify', { key: work.key })
+    const selfVerify = await s.call('acm_task_verify', { key })
     check('worker holds task:verify and still cannot verify its own work', selfVerify.value?.reason === 'self-verification-refused', selfVerify.value?.reason ?? '')
 
     const create = await s.call('acm_task_create', { title: 'self-assigned follow-up' })
@@ -277,10 +301,23 @@ try {
     check('reviewer sees verify', names.includes('acm_task_verify'))
     check('reviewer does not see return or create', !names.includes('acm_task_return') && !names.includes('acm_task_create'))
 
-    const before = await s.call('acm_task_get', { key: work.key })
+    const before = await s.call('acm_task_get', { key: work.discoveredKey })
     check('reviewer reads the returned task', before.value?.task?.state === 'returned', before.value?.task?.state ?? before.value?.reason ?? '')
 
-    const verify = await s.call('acm_task_verify', { key: work.key, note: 'evidence matches the claim' })
+    // Re-read rather than take the return note's word for it: `scope: 'all'` reaches the
+    // worker's session, and the digest is recomputed from what came back.
+    const recheck = await s.call('acm_search', { query: work.token, scope: 'all' })
+    const row = (recheck.value?.items ?? []).find((i) => i.id === work.workerMemoryId)
+    check('reviewer finds the work by its own search', Boolean(row), row ? `memory #${row.id}` : `${(recheck.value?.items ?? []).length} hits`)
+    check('the digest the reviewer computes matches the one returned', row ? digest(row.text) === work.workerDigest : false, row ? digest(row.text) : '-')
+
+    // The retriever is lexical, so a query that shares a prefix still returns loose hits.
+    // What must be true is narrower and checkable: no row contains the token nobody wrote.
+    const control = await s.call('acm_search', { query: `${work.token}-never-written`, scope: 'all' })
+    const claims = (control.value?.items ?? []).filter((i) => String(i.text ?? '').includes(`${work.token}-never-written`))
+    check('a token nobody wrote appears in no row, so the hit above is not vacuous', claims.length === 0, `${(control.value?.items ?? []).length} loose hits, 0 exact`)
+
+    const verify = await s.call('acm_task_verify', { key: work.discoveredKey, note: `re-read memory #${work.workerMemoryId}, digest ${work.workerDigest}` })
     check('reviewer verifies', verify.value?.task?.state === 'verified', verify.value?.reason ?? '')
     check('the verifier is recorded as the reviewer', verify.value?.task?.verifiedBy === 'reviewer', verify.value?.task?.verifiedBy ?? '-')
 
@@ -292,16 +329,16 @@ try {
   await as('intruder', async (s) => {
     const names = await s.tools()
     check('no grants means one tool, the one that explains why', names.length === 1 && names[0] === 'acm_capabilities', names.join(','))
-    const read = await s.call('acm_search', { query: work.fact })
+    const read = await s.call('acm_search', { query: work.token })
     check('and reading the memory it can see listed is refused', looksDenied(read), read.text.slice(0, 60))
   })
 
   // ---- a fresh process: the work outlived the sessions that made it -----
   await as('worker', async (s) => {
-    const search = await s.call('acm_search', { query: work.fact })
+    const search = await s.call('acm_search', { query: work.token })
     check('a new session finds the memory', (search.value?.items ?? []).some((i) => i.id === work.memoryId), `${(search.value?.items ?? []).length} hits`)
 
-    const trail = await s.call('acm_task_get', { key: work.key })
+    const trail = await s.call('acm_task_get', { key: work.discoveredKey })
     const states = (trail.value?.events ?? []).map((e) => e.to)
     check('a new session reads the whole trail', ['assigned', 'running', 'returned', 'verified'].every((x) => states.includes(x)), states.join(' -> '))
     check('and it still says who verified', trail.value?.task?.verifiedBy === 'reviewer', trail.value?.task?.verifiedBy ?? '-')
