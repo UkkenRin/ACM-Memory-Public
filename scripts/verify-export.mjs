@@ -17,7 +17,16 @@
  * exits 0, because the same script runs in the private tree as a step of `test:public`
  * and there is nothing to verify there.
  *
- * Usage: node scripts/verify-export.mjs [--require] [--root <dir>] [--json]
+ * `--strict-extras` stops skipping test scratch. The default skips `.tmp/` and `.tmp-*`
+ * at the top level because the suite writes them into the tree it is being run in, and a
+ * verifier that fails on its own artifacts teaches people to skip it (`PUB-12`). The
+ * price of that leniency is that anything written into scratch *after* the export is
+ * invisible - and on 2026-11-18 fourteen probe files from `.tmp*` went to the public
+ * mirror that way, because the publish step walked the directory instead of the manifest.
+ * The publish path therefore asks the strict question: run this in the tree you are about
+ * to ship, not in a working copy (`PUB-18`).
+ *
+ * Usage: node scripts/verify-export.mjs [--require] [--strict-extras] [--root <dir>] [--json]
  */
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -30,6 +39,7 @@ const rootArg = argv.indexOf('--root')
 const root = resolve(rootArg >= 0 ? argv[rootArg + 1] : fileURLToPath(new URL('../', import.meta.url)))
 const requireManifest = argv.includes('--require')
 const asJson = argv.includes('--json')
+const strictExtras = argv.includes('--strict-extras')
 
 const MANIFEST = 'export-manifest.json'
 /** Skipped at the **top level only**. A real `npm install` tree at the root is not part
@@ -76,14 +86,14 @@ function fileUniverse() {
   }
 }
 
-function walk(dir, acc = [], seen = new Map()) {
+function walk(dir, acc = [], seen = new Map(), skipScratch = true) {
   for (const name of readdirSync(dir)) {
     const abs = join(dir, name)
     const st = lstatSync(abs)
     if (st.isSymbolicLink()) { acc.push({ path: relative(root, abs).replace(/\\/g, '/'), kind: 'symlink' }); continue }
     if (st.isDirectory()) {
-      if ((SKIP_DIRS.has(name) || isScratchDir(name)) && resolve(dir) === resolve(root)) continue
-      walk(abs, acc, seen)
+      if ((SKIP_DIRS.has(name) || (skipScratch && isScratchDir(name))) && resolve(dir) === resolve(root)) continue
+      walk(abs, acc, seen, skipScratch)
       continue
     }
     if (!st.isFile()) { acc.push({ path: relative(root, abs).replace(/\\/g, '/'), kind: 'special' }); continue }
@@ -154,8 +164,11 @@ if (/"files"[\s\S]*?\b[0-9a-f]{40}\b/.test(JSON.stringify(manifest))) {
   problems.push('manifest contains a 40-hex value, which looks like a private commit id')
 }
 
-const universe = fileUniverse()
-const onDisk = (universe.paths ? entriesFrom(universe.paths) : walk(root)).filter((e) => e.path !== MANIFEST)
+// Strict mode reads the disk, not the index: the whole point is to see files the
+// export never mentioned, and an ignored file is exactly such a file.
+const universe = strictExtras ? { paths: null, from: 'directory tree, strict extras' } : fileUniverse()
+const onDisk = (universe.paths ? entriesFrom(universe.paths) : walk(root, [], new Map(), !strictExtras))
+  .filter((e) => e.path !== MANIFEST)
 for (const entry of onDisk) {
   if (entry.kind === 'missing') problems.push(`missing from the tree: ${entry.path}`)
   else if (entry.kind !== 'file') problems.push(`${entry.path}: ${entry.kind} is not a regular file`)
